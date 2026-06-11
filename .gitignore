@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Tests
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE / editors
+.idea/
+.vscode/
+
+# OpenCode workspace (local agent config, not part of the project)
+.opencode/
+setup-opencode-agent.sh
+
+# Temporary / generated audio
+*.tmp.wav
+*.generated.carxp
+
+# OS
+.DS_Store
+Thumbs.db
