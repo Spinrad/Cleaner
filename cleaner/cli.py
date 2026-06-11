@@ -93,7 +93,7 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
          glue, air, width, bus_comp, intensity, force_native,
          expander, ducking, deharsher, notches, saturation, limiter, lufs,
          hp35, hp150):
-    """CLEANER -- Restore Post-Punk live recordings.
+    """CLEANER -- Restore live recordings.
 
     SOURCE is the audio file (any ffmpeg format: mp3, m4a, wav, flac...).
 

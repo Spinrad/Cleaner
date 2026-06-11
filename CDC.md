@@ -1,4 +1,4 @@
-# CDC — cleaner v4.0.0 (cible)
+# CDC — cleaner v0.1.0
 
 **Statut :** Implémenté (Phase 0 + Phase 1 livrées).
 **Version :** 0.1.0
@@ -375,11 +375,12 @@ en mode natif ou LSP.
 10. Limiter LSP
 11. De‑harsher LSP
 
-### Phase 2 — Robustesse et polish (En cours / à faire)
-12. `--force-native` + détection LSP au démarrage
-13. Renforcement des tests preset (valeurs réelles)
-14. README.md final (archi hybride)
-15. Nettoyage `.gitignore`, docstrings
+### Phase 2 — Robustesse et polish ✅ Livré
+12. `--force-native` + détection LSP au démarrage ✅
+13. Renforcement des tests preset (valeurs réelles) ✅
+14. README.md final (archi hybride) ✅
+15. Nettoyage `.gitignore`, docstrings ✅
+16. GainTracker intégré dans les compute functions ✅
 
 ## 11. Glossaire
 

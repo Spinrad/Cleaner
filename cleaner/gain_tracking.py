@@ -5,7 +5,7 @@ any mid-graph audio measurement (forbidden in single-pass).
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

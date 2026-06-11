@@ -93,16 +93,6 @@ def build_ms_sidechain_block(ducking_enabled: bool,
     return parts, tail_prefix
 
 
-def build_postamble(target_lufs: float, ceiling: float) -> str:
-    """Build the LUFS measurement + post-limiter tail (always native)."""
-    return (
-        f"ebur128=peak=true:framelog=quiet,"
-        f"volume=0dB,"  # gain applied later in io_adapter
-        f"alimiter=limit={10.0**(ceiling/20.0):.4f}:attack=0.1:release=30:level=true"
-        f"[out]"
-    )
-
-
 def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     """Build the complete LSP filter_complex graph.
     
