@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging, sys
 from pathlib import Path
-from typing import Optional
+
 import click
 from cleaner.pipeline import run_pipeline
 
@@ -142,7 +142,7 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         for e in errors: click.echo(f"  Error: {e}", err=True)
         sys.exit(1)
 
-    # -- Apply preset (uses mutable dict, locals()[key] is a no-op) ----
+    # -- Apply preset ----
     if preset:
         p = PRESETS[preset]
         click.echo(f"\n  Preset: {preset} -- {p['desc']}")

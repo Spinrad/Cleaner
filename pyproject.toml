@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cleaner"
 version = "0.1.0"
-description = "CLI DSP tool for restoring Post-Punk live recordings — ffmpeg-native architecture"
+description = "Live recording restoration — hybrid ffmpeg + LSP/LV2 DSP chain"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

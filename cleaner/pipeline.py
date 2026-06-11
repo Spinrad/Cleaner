@@ -1,4 +1,4 @@
-"""Pipeline orchestrator -- hybrid ffmpeg + LSP/LV2, before/after metrics."""
+"""Pipeline orchestrator — hybrid ffmpeg + LSP/LV2, before/after metrics, rich output."""
 
 from __future__ import annotations
 import logging, shutil, subprocess, uuid

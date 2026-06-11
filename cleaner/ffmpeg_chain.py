@@ -1,15 +1,16 @@
 """
-FFmpeg native filterchain builder — Complete DSP chain.
+FFmpeg native filterchain builder — used by --force-native.
 
-Builds a filter_complex string from AnalysisReport with per-stage
-enable/disable control.
+Builds a pure ffmpeg filter_complex string from AnalysisReport.
+This is the legacy v0.1 native path; the default LSP path uses
+lsp_chain_builder.py instead.
 
-Full chain:
-  HP 35Hz → Expander (agate upward) → MS encode → split M/S
-    → Side: HP 150Hz → sidechaincompress (Mid triggers Side)
-    → Merge → MS decode → De-harsher (adynamicequalizer)
-    → Notches x3 (anequalizer) → Saturation (asoftclip)
-    → Limiter (alimiter) → Output
+Full native chain:
+  HP 35Hz -> Expander (agate) -> MS encode -> split M/S
+    -> Side: HP 150Hz -> sidechaincompress (Mid triggers Side)
+    -> Merge -> MS decode -> De-harsher (adynamicequalizer)
+    -> Notches x3 (anequalizer) -> Saturation (asoftclip)
+    -> Limiter (alimiter) -> Output
 """
 
 from __future__ import annotations

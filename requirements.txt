@@ -1,4 +1,3 @@
-scipy>=1.11.0
-numpy>=1.26.0
-click>=8.0.0
-soundfile>=0.12.0
+# Dependencies are declared in pyproject.toml.
+# Install with: pip install -e .
+# Dev deps: pip install -e ".[dev]"
