@@ -105,8 +105,12 @@ def detect_room_modes_by_persistence(freqs: np.ndarray, S: np.ndarray):
         hi = min(len(band_avg) - 1, idx + oct_third_bins)
         local_median = float(np.median(band_avg[lo:hi+1]))
         peak_val = band_avg[idx]
-        prominence_linear = peak_val - local_median
-        prominence_db = float(20.0 * np.log10(max(peak_val, 1e-10)) - 20.0 * np.log10(max(local_median, 1e-10)))
+        # Prominence relative to the band's median level (not local ratio of tiny values)
+        band_median = float(np.median(band_avg[band_avg > 1e-10])) if np.any(band_avg > 1e-10) else 1e-10
+        ref_level = max(band_median, 1e-10)
+        peak_db = 20.0 * np.log10(max(peak_val, 1e-10))
+        ref_db = 20.0 * np.log10(ref_level)
+        prominence_db = max(0.0, peak_db - ref_db)
         # Q estimation: -3 dB bandwidth
         target = band_avg[idx] / np.sqrt(2)
         l, r = int(idx), int(idx)

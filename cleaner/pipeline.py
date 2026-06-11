@@ -114,18 +114,24 @@ def _print_analysis_report(report):
     click.echo()
 
 
-def _print_chain_summary(report, stages):
+def _print_chain_summary(report, stages, use_lsp=False):
     """Human-readable filterchain summary."""
     _box_header("CHAINE DSP APPLIQUEE")
     i = 0
     if stages.get("expander", True):
         i += 1
-        _box_line(f"{i}. HP 35Hz + Expander (anti-AGC)", "cyan")
-        exp_th = 20*np.log10(max(report.get('expander_threshold_linear', 0.1), 1e-10))
-        _box_line(f"   seuil={exp_th:.1f}dB  ratio={report.get('expander_ratio',2):.1f}  "
-                  f"attack={report.get('expander_attack_ms',5):.0f}ms  "
-                  f"release={report.get('expander_release_ms',40):.0f}ms  "
-                  f"range=+{20*np.log10(1+report.get('expander_range_linear',0.25)):.1f}dB", "cyan")
+        if use_lsp:
+            _box_line(f"{i}. HP 35Hz + Expander LSP (anti-AGC)", "cyan")
+            _box_line(f"   mode=Up  ratio={report.get('expander_ratio',2):.1f}  "
+                      f"attack={report.get('expander_attack_ms',5):.0f}ms  "
+                      f"release={report.get('expander_release_ms',40):.0f}ms", "cyan")
+        else:
+            _box_line(f"{i}. HP 35Hz + Expander (anti-AGC)", "cyan")
+            exp_th = 20*np.log10(max(report.get('expander_threshold_linear', 0.1), 1e-10))
+            _box_line(f"   seuil={exp_th:.1f}dB  ratio={report.get('expander_ratio',2):.1f}  "
+                      f"attack={report.get('expander_attack_ms',5):.0f}ms  "
+                      f"release={report.get('expander_release_ms',40):.0f}ms  "
+                      f"range=+{20*np.log10(1+report.get('expander_range_linear',0.25)):.1f}dB", "cyan")
     else:
         _box_line(f"   Expander DESACTIVE", "cyan")
     hp35_on = stages.get("hp35", True)
@@ -147,9 +153,14 @@ def _print_chain_summary(report, stages):
         _box_line(f"   Ducking DESACTIVE", "cyan")
     if stages.get("deharsher", False):
         i += 1
-        _box_line(f"{i}. De-harsher dynamique [2.5-4.5 kHz] (experimental)", "cyan")
-        _box_line(f"   seuil={report.get('deharsher_display_threshold',5):.1f}  "
-                  f"ratio={report.get('deharsher_filter_ratio',3):.1f}", "cyan")
+        if use_lsp:
+            _box_line(f"{i}. De-harsher LSP [2.5-4.5 kHz] (experimental)", "cyan")
+            _box_line(f"   seuil adaptatif  "
+                      f"ratio={report.get('harshness_index',0.3)*2+1.5:.1f}", "cyan")
+        else:
+            _box_line(f"{i}. De-harsher dynamique [2.5-4.5 kHz] (experimental)", "cyan")
+            _box_line(f"   seuil={report.get('deharsher_display_threshold',5):.1f}  "
+                      f"ratio={report.get('deharsher_filter_ratio',3):.1f}", "cyan")
     else:
         _box_line(f"   De-harsher DESACTIVE (opt-in avec --deharsher)", "cyan")
     if stages.get("notches", True):
@@ -163,8 +174,19 @@ def _print_chain_summary(report, stages):
         _box_line(f"   Notches DESACTIVES", "cyan")
     if stages.get("saturation", True):
         i += 1
-        _box_line(f"{i}. Tape Saturation (drive+makeup, 4x oversample)", "cyan")
-        _box_line(f"   drive=+{report.get('sat_drive_db',1.2):.1f}dB  seuil={report.get('sat_threshold_linear',0.85):.2f}  makeup={report.get('sat_makeup_db',-0.7):.1f}dB", "cyan")
+        if use_lsp:
+            import math
+            glue = report.get('_glue', 0.15)
+            intensity = report.get('_intensity', 0.5)
+            eff = glue * (0.3 + intensity * 0.7)
+            drive_db = eff * 16.0
+            makeup_db = -drive_db * 0.4
+            _box_line(f"{i}. Saturation LSP (drive + hard-clip)", "cyan")
+            _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB  "
+                      f"hclip={min(1.0, eff*1.2):.2f}", "cyan")
+        else:
+            _box_line(f"{i}. Tape Saturation (drive+makeup, 4x oversample)", "cyan")
+            _box_line(f"   drive=+{report.get('sat_drive_db',1.2):.1f}dB  seuil={report.get('sat_threshold_linear',0.85):.2f}  makeup={report.get('sat_makeup_db',-0.7):.1f}dB", "cyan")
     else:
         _box_line(f"   Saturation DESACTIVEE", "cyan")
     if stages.get("air", False):
@@ -173,12 +195,20 @@ def _print_chain_summary(report, stages):
         w = report.get("_width", 0.0)
         _box_line(f"   Width: {w:+.1f} ({'elargi' if w > 0 else 'resserre' if w < 0 else 'neutre'})", "cyan")
     if stages.get("bus_comp", False):
-        bth = 20*np.log10(max(report.get('bus_threshold_linear', 0.18), 1e-10))
-        _box_line(f"   Bus Comp SSL: seuil={bth:.1f}dB  ratio=2:1  "
-                  f"attack=10ms  mix={report.get('bus_mix',0):.0%}", "cyan")
+        if use_lsp:
+            bus = report.get('_bus_comp', 0.0)
+            _box_line(f"   Bus Comp LSP: seuil auto  ratio=2:1  "
+                      f"attack=10ms  mix={bus:.0%}  dry/wet", "cyan")
+        else:
+            bth = 20*np.log10(max(report.get('bus_threshold_linear', 0.18), 1e-10))
+            _box_line(f"   Bus Comp SSL: seuil={bth:.1f}dB  ratio=2:1  "
+                      f"attack=10ms  mix={report.get('bus_mix',0):.0%}", "cyan")
     if stages.get("limiter", True):
         i += 1
-        _box_line(f"{i}. True Peak Limiter  ceiling=-1.1 dBFS", "cyan")
+        if use_lsp:
+            _box_line(f"{i}. Limiter LSP (true-peak, 4x oversampling, ALR)", "cyan")
+        else:
+            _box_line(f"{i}. True Peak Limiter  ceiling=-1.1 dBFS", "cyan")
     else:
         _box_line(f"   Limiter DESACTIVE", "cyan")
     if stages.get("lufs", True):
@@ -292,7 +322,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                 "LSP plugins not found. Install: sudo apt install lsp-plugins-lv2\n"
                 "Or use --force-native for ffmpeg-native processing."
             )
-        _print_chain_summary(report, stages)
+        _print_chain_summary(report, stages, use_lsp)
 
         if dry_run:
             click.echo(f"  Filtergraph ({len(graph)} chars):")
