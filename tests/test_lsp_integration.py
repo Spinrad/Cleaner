@@ -248,3 +248,190 @@ class TestLSPIntrospection:
         assert "input=2.0" in node
         assert "volume=-3.0" in node
         assert "hclip=0.5" in node
+
+
+class TestFullLSPChain:
+    """End-to-end: full LSP filtergraph renders without errors."""
+
+    @pytest.mark.skipif(not _has_lsp(), reason="LSP plugins not installed")
+    def test_full_graph_renders(self):
+        """The complete LSP filtergraph must be accepted by ffmpeg."""
+        import math
+        with tempfile.TemporaryDirectory() as tmp:
+            input_wav = Path(tmp) / "input.wav"
+            output_wav = Path(tmp) / "output.wav"
+
+            # Generate 2 seconds of noise at -20 dBFS
+            sr = 48000
+            dur = 2.0
+            rng = np.random.default_rng(42)
+            noise = rng.normal(0, 10 ** (-20 / 20), (int(sr * dur), 2))
+            sf.write(str(input_wav), noise.astype(np.float32), sr, subtype="PCM_24")
+
+            # Build a realistic report
+            report = {
+                'crest_factor_db': 10.0, 'peak_db': -3.0, 'rms_db': -15.0,
+                'transient_attack_ms': 8.0, 'agc_recovery_ms': 60.0,
+                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
+                'comp_attack_ms': 2.0, 'comp_release_ms': 60.0,
+                'room_modes_hz': [250, 400, 550], 'room_mode_qs': [8, 5, 7],
+                'room_mode_gains_db': [5, 4, 3],
+                'harshness_index': 0.2, '_tame_cymbals': 0,
+                '_intensity': 0.5, '_glue': 0.3, '_air': 1.0,
+                '_bus_comp': 0.2, '_ceiling_db': -1.1,
+                '_notch_multiplier': 1.0, '_width': 0.0,
+            }
+            stages = {
+                'expander': True, 'ducking': True, 'deharsher': True,
+                'notches': True, 'saturation': True, 'limiter': True,
+                'hp35': True, 'hp150': True, 'glue': True, 'air': True,
+                'width': False, 'bus_comp': True, 'intensity': True,
+            }
+
+            from cleaner.lsp_chain_builder import build_lsp_filtergraph
+            graph = build_lsp_filtergraph(report, stages)
+
+            # Verify graph is valid
+            assert 'lv2=p=' in graph
+            assert '[out]' in graph
+            assert 'expander_stereo' in graph
+            assert 'para_equalizer_x16_stereo' in graph
+            assert 'loud_comp_stereo' in graph
+            assert 'compressor_stereo' in graph
+            assert 'limiter_stereo' in graph
+            assert 'sidechaincompress' in graph
+
+            # Render
+            cmd = [
+                "ffmpeg", "-y", "-nostdin",
+                "-i", str(input_wav),
+                "-filter_complex", graph,
+                "-map", "[out]",
+                "-c:a", "pcm_s24le",
+                str(output_wav),
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            assert proc.returncode == 0, (
+                f"Full LSP chain render failed (exit {proc.returncode}):\n"
+                f"{proc.stderr[-1000:]}"
+            )
+            assert output_wav.exists(), "Output file not created"
+            assert output_wav.stat().st_size > 1000, "Output file too small"
+
+    @pytest.mark.skipif(not _has_lsp(), reason="LSP plugins not installed")
+    def test_native_graph_still_works(self):
+        """The native ffmpeg_chain builder must still work (regression check)."""
+        import math
+        with tempfile.TemporaryDirectory() as tmp:
+            input_wav = Path(tmp) / "input.wav"
+            output_wav = Path(tmp) / "output.wav"
+
+            sr = 48000
+            dur = 1.0
+            rng = np.random.default_rng(42)
+            noise = rng.normal(0, 10 ** (-20 / 20), (int(sr * dur), 2))
+            sf.write(str(input_wav), noise.astype(np.float32), sr, subtype="PCM_24")
+
+            from cleaner.ffmpeg_chain import build_filtergraph
+
+            report = {
+                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
+                'comp_attack_ms': 2.0, 'comp_release_ms': 60,
+                'notch_freq_1': 300.0, 'notch_q_1': 20.0, 'notch_gain_1': -6.0,
+                'notch_freq_2': 450.0, 'notch_q_2': 20.0, 'notch_gain_2': -5.0,
+                'notch_freq_3': 600.0, 'notch_q_3': 20.0, 'notch_gain_3': -4.0,
+                'limiter_ceiling_linear': 0.88,
+                'expander_threshold_linear': 0.05, 'expander_ratio': 2.0,
+                'expander_attack_ms': 5.0, 'expander_release_ms': 40.0,
+                'expander_range_linear': 0.25,
+                'sat_threshold_linear': 0.85, 'sat_softclip_type': 0,
+                '_air_db': 0.0, '_width': 0.0, 'sat_glue': 0.15, 'sat_drive_db': 1.2,
+                'sat_makeup_db': -0.7,
+                'bus_threshold_linear': 0.18, 'bus_ratio': 2, 'bus_attack_ms': 10,
+                'bus_release_ms': 100, 'bus_mix': 0.0,
+            }
+
+            graph = build_filtergraph(report)
+
+            cmd = [
+                "ffmpeg", "-y", "-nostdin",
+                "-i", str(input_wav),
+                "-filter_complex", graph,
+                "-map", "[out]",
+                "-c:a", "pcm_s24le",
+                str(output_wav),
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            assert proc.returncode == 0, (
+                f"Native chain render failed (exit {proc.returncode}):\n"
+                f"{proc.stderr[-500:]}"
+            )
+            assert output_wav.stat().st_size > 1000
+
+    @pytest.mark.skipif(not _has_lsp(), reason="LSP plugins not installed")
+    def test_lsp_chain_adds_harmonics(self):
+        """The full LSP chain with saturation should add harmonics."""
+        with tempfile.TemporaryDirectory() as tmp:
+            input_wav = Path(tmp) / "sine_in.wav"
+            output_wav = Path(tmp) / "sine_out.wav"
+
+            # 440 Hz sine at -10 dBFS
+            sr = 48000
+            dur = 2.0
+            t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+            amp = 10 ** (-10 / 20)
+            y = amp * np.sin(2 * math.pi * 440 * t)
+            stereo = np.column_stack([y, y.copy()])
+            sf.write(str(input_wav), stereo.astype(np.float32), sr, subtype="PCM_24")
+
+            # Heavy saturation, everything else off/minimal
+            report = {
+                'crest_factor_db': 10.0, 'peak_db': -3.0, 'rms_db': -15.0,
+                'transient_attack_ms': 8.0, 'agc_recovery_ms': 60.0,
+                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
+                'comp_attack_ms': 2.0, 'comp_release_ms': 60.0,
+                'room_modes_hz': [250], 'room_mode_qs': [5],
+                'room_mode_gains_db': [2],  # below 3 dB -> disabled
+                'harshness_index': 0.0, '_tame_cymbals': 0,
+                '_intensity': 1.0, '_glue': 0.6, '_air': 0.0,
+                '_bus_comp': 0.0, '_ceiling_db': -1.1,
+                '_notch_multiplier': 1.0, '_width': 0.0,
+            }
+            stages = {
+                'expander': False, 'ducking': False, 'deharsher': False,
+                'notches': False, 'saturation': True, 'limiter': False,
+                'hp35': False, 'hp150': False, 'glue': True, 'air': False,
+                'width': False, 'bus_comp': False, 'intensity': True,
+            }
+
+            from cleaner.lsp_chain_builder import build_lsp_filtergraph
+            graph = build_lsp_filtergraph(report, stages)
+
+            cmd = [
+                "ffmpeg", "-y", "-nostdin",
+                "-i", str(input_wav),
+                "-filter_complex", graph,
+                "-map", "[out]",
+                "-c:a", "pcm_s24le",
+                str(output_wav),
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            assert proc.returncode == 0, f"Render failed:\n{proc.stderr[-500:]}"
+
+            # Measure harmonics
+            y_out, _ = sf.read(str(output_wav), always_2d=True, dtype='float32')
+            y_mono = np.mean(y_out, axis=1)
+            n = len(y_mono)
+            fft = np.abs(np.fft.rfft(y_mono * np.hanning(n)))
+            freqs = np.fft.rfftfreq(n, 1 / sr)
+
+            def energy_at(freq):
+                idx = np.argmin(np.abs(freqs - freq))
+                win = max(1, int(sr / n * 5))
+                lo, hi = max(0, idx - win), min(len(fft) - 1, idx + win)
+                return 20 * math.log10(max(np.mean(fft[lo:hi + 1]), 1e-15))
+
+            # Check harmonics above fundamental
+            h2 = energy_at(880) - energy_at(440)
+            print(f"\nH2 relative to fundamental: {h2:.1f} dB")
+            assert h2 > -110.0, f"H2 too quiet: {h2:.1f} dB (saturation not working in full chain)"

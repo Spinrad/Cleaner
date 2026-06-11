@@ -8,6 +8,7 @@ import numpy as np
 import click
 from cleaner.analysis.global_analysis import get_global_analysis, compute_ffmpeg_params, AnalysisReport
 from cleaner.ffmpeg_chain import build_filtergraph
+from cleaner.lsp_chain_builder import build_lsp_filtergraph
 from cleaner.io_adapter import (convert_to_wav, measure_lufs, apply_lufs_gain,
                                 FFmpegNotFoundError, SourceDecodeError,
                                 LUFSMeasurementError, require_ffmpeg)
@@ -42,6 +43,27 @@ def _measure_file(wav_path: Path) -> dict:
         }
     except Exception:
         return {}
+
+
+def _lsp_available() -> bool:
+    """Check if required LSP plugins are available."""
+    try:
+        from cleaner.lv2_introspect import get_plugin_info
+        required = [
+            "http://lsp-plug.in/plugins/lv2/expander_stereo",
+            "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
+            "http://lsp-plug.in/plugins/lv2/loud_comp_stereo",
+            "http://lsp-plug.in/plugins/lv2/compressor_stereo",
+            "http://lsp-plug.in/plugins/lv2/limiter_stereo",
+            "http://lsp-plug.in/plugins/lv2/sc_compressor_stereo",
+        ]
+        for uri in required:
+            info = get_plugin_info(uri)
+            if info is None or not info.ports:
+                return False
+        return True
+    except Exception:
+        return False
 
 
 def _box_header(text: str) -> None:
@@ -209,12 +231,17 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                  target_lufs=-14.0, ceiling=-1.1, tame_cymbals=0.0,
                  notch_intensity=1.0, glue=0.15, air=1.5, width=0.0,
                  bus_comp=0.0, intensity=0.5,
-                 stages=None):
+                 stages=None, force_native=False):
     if stages is None:
         stages = {}
     result = PipelineResult()
     click.echo()
-    click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
+    if force_native:
+        click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
+    elif _lsp_available():
+        click.secho("  cleaner v0.1.0 -- hybrid ffmpeg + LSP/LV2 chain", fg="cyan", bold=True)
+    else:
+        click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
 
     try:
         ffmpeg = require_ffmpeg()
@@ -257,12 +284,29 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
 
         # 4. Filtergraph
         click.echo("  [3/5] Construction de la chaine DSP...")
-        graph = build_filtergraph(report, stages)
+        use_lsp = not force_native and _lsp_available()
+        if use_lsp:
+            click.secho("  Mode: LSP/LV2 (plugins detectes)", fg="cyan")
+            graph = build_lsp_filtergraph(report, stages)
+        elif force_native:
+            click.secho("  Mode: force-native (ffmpeg natif)", fg="cyan")
+            graph = build_filtergraph(report, stages)
+        else:
+            click.secho("  [!] LSP plugins non trouves.", fg="yellow")
+            click.secho("  Utilisez --force-native pour le rendu natif ffmpeg.", fg="yellow")
+            raise RuntimeError(
+                "LSP plugins not found. Install: sudo apt install lsp-plugins-lv2\n"
+                "Or use --force-native for ffmpeg-native processing."
+            )
         _print_chain_summary(report, stages)
 
         if dry_run:
             click.echo(f"  Filtergraph ({len(graph)} chars):")
             click.echo(f"  {graph[:300]}...")
+            if use_lsp:
+                click.secho("  Mode: LSP/LV2", fg="cyan")
+            else:
+                click.secho("  Mode: ffmpeg natif", fg="cyan")
             click.secho("\n  Dry run termine.", fg="green")
             result.success = True
             return result

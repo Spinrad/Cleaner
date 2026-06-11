@@ -101,3 +101,126 @@ def build_postamble(target_lufs: float, ceiling: float) -> str:
         f"alimiter=limit={10.0**(ceiling/20.0):.4f}:attack=0.1:release=30:level=true"
         f"[out]"
     )
+
+
+def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
+    """Build the complete LSP filter_complex graph.
+    
+    Architecture:
+      Preamble (native) → Expander (LSP) → M/S+ducking (native) → De-harsher (LSP)
+      → EQ (LSP) → Saturator (LSP) → Compressor (LSP) → Limiter (LSP)
+      → Postamble (native LUFS + alimiter)
+    
+    Args:
+        report: AnalysisReport with LSP params already computed.
+        stages: Stage enable/disable dict.
+    
+    Returns:
+        A complete filter_complex string.
+    """
+    from cleaner.analysis.global_analysis import (
+        compute_expander_lsp_params,
+        compute_eq_lsp_params,
+        compute_compressor_lsp_params,
+        compute_limiter_lsp_params,
+        compute_deharsher_lsp_params,
+        compute_loud_comp_lsp_params,
+    )
+    from cleaner.lv2_introspect import get_plugin_info
+    from cleaner.lv2_params import clamp_to_port
+    
+    # Plugin URIs
+    EXPANDER_URI = "http://lsp-plug.in/plugins/lv2/expander_stereo"
+    EQ_URI = "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo"
+    SATURATOR_URI = "http://lsp-plug.in/plugins/lv2/loud_comp_stereo"
+    COMPRESSOR_URI = "http://lsp-plug.in/plugins/lv2/compressor_stereo"
+    LIMITER_URI = "http://lsp-plug.in/plugins/lv2/limiter_stereo"
+    DEHARSHER_URI = "http://lsp-plug.in/plugins/lv2/sc_compressor_stereo"
+    
+    def on(name: str) -> bool:
+        defaults_off = {"glue": False, "air": False, "width": False, "bus_comp": False,
+                         "deharsher": False, "intensity": True}
+        return stages.get(name, not defaults_off.get(name, True))
+    
+    def _clamped_lv2_node(uri, compute_fn, *args):
+        """Build a clamped LV2 node from a compute function."""
+        params = compute_fn(*args)
+        plugin = get_plugin_info(uri)
+        clamped = {}
+        for sym, val in params.items():
+            port = plugin.ports.get(sym) if plugin else None
+            if port:
+                clamped[sym] = clamp_to_port(val, port, convert_unit=False)
+            else:
+                clamped[sym] = val
+        return build_lv2_node(uri, clamped)
+    
+    parts: list[str] = []
+    
+    # ── Preamble ──
+    chain = build_filtergraph_preamble()
+    
+    # ── Stage 1: Expander (LSP, replaces agate) ──
+    if on("expander") and on("intensity"):
+        chain += "," + _clamped_lv2_node(EXPANDER_URI, compute_expander_lsp_params, report)
+    
+    # ── M/S encode ──
+    chain += ",stereotools=mode=lr>ms[ms]"
+    
+    # ── Sidechain ducking (native) ──
+    if on("ducking"):
+        comp_thresh = report.get("comp_threshold_linear", 0.05)
+        comp_ratio = report.get("comp_ratio", 4)
+        comp_attack = report.get("comp_attack_ms", 2.0)
+        comp_release = report.get("comp_release_ms", 60.0)
+        hp150_on = on("hp150")
+    else:
+        comp_thresh = 0.05
+        comp_ratio = 4
+        comp_attack = 2.0
+        comp_release = 60.0
+        hp150_on = False
+    
+    ms_parts, tail_prefix = build_ms_sidechain_block(
+        on("ducking"), comp_thresh, comp_ratio, comp_attack, comp_release, hp150_on
+    )
+    parts.extend(ms_parts)
+    
+    tail = tail_prefix
+    
+    # ── Stage: De-harsher (LSP, opt-in, before saturator) ──
+    if on("deharsher"):
+        tail += "," + _clamped_lv2_node(DEHARSHER_URI, compute_deharsher_lsp_params, report)
+    
+    # ── Stage: EQ notches + air (LSP) ──
+    if on("notches") or on("air"):
+        tail += "," + _clamped_lv2_node(EQ_URI, compute_eq_lsp_params, report)
+    
+    # ── Stage: Saturator (LSP loud_comp) ──
+    if on("saturation") and on("glue"):
+        tail += "," + _clamped_lv2_node(SATURATOR_URI, compute_loud_comp_lsp_params, report)
+    
+    # ── Stage: Bus Compressor (LSP) ──
+    if on("bus_comp"):
+        tail += "," + _clamped_lv2_node(COMPRESSOR_URI, compute_compressor_lsp_params, report)
+    
+    # ── Stage: Limiter (LSP) ──
+    if on("limiter"):
+        tail += "," + _clamped_lv2_node(LIMITER_URI, compute_limiter_lsp_params, report)
+    
+    # ── Stage: Width (native stereotools) ──
+    w = report.get("_width", 0.0)
+    if on("width"):
+        tail += f",stereotools=mode=lr>lr:base={w}:slev=1:mlev=1"
+    
+    # ── Postamble: LUFS + safety limiter (native) ──
+    tail += ",ebur128=peak=true:framelog=quiet"
+    ceiling = report.get('_ceiling_db', -1.1)
+    post_ceiling = ceiling + 0.3 if on("limiter") else ceiling
+    post_ceiling = min(post_ceiling, -0.3)  # never above -0.3 dBFS
+    tail += f",alimiter=limit={10.0**(post_ceiling/20.0):.4f}:attack=0.1:release=30:level=true"
+    tail += "[out]"
+    
+    # ── Assemble ──
+    graph = ";".join(parts + [chain, tail])
+    return graph

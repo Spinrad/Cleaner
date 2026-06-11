@@ -229,3 +229,249 @@ def compute_loud_comp_lsp_params(report: AnalysisReport) -> dict[str, float]:
         "refer": 0.0,  # reference mode off
         "relspec": 0.0,  # relative spectrum off
     }
+
+
+def compute_expander_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP expander_stereo (anti-AGC, Mode=Up).
+    
+    Replaces agate=mode=upward. Position: after HP35, before M/S encode.
+    Uses GainTracker for initial levels only (expander is first in chain).
+    """
+    from cleaner.lv2_params import db_to_linear_gain
+    
+    crest = report.get("crest_factor_db", 12.0)
+    peak_db = report.get("peak_db", -3.0)
+    attack_ms = report.get("transient_attack_ms", 10.0)
+    agc_rec = report.get("agc_recovery_ms", 80.0)
+    intensity = report.get("_intensity", 0.5)
+    
+    # Mode: Up (anti-AGC expansion)
+    em = 1.0
+    
+    # Attack level (threshold): peak - 3 dB, converted to linear G
+    exp_thresh_db = peak_db - 3.0
+    al = db_to_linear_gain(exp_thresh_db)
+    
+    # Ratio: DECREASES with crest (more expansion when compressed)
+    # crest=4 (AGC) -> 1.48, crest=12 -> 1.24, crest=18 -> 1.1
+    base_ratio = max(1.1, 1.6 - crest * 0.03)
+    er = max(1.1, min(1.5, base_ratio * intensity))
+    
+    # Attack: fast to catch transients
+    at_val = max(1.0, min(attack_ms * 0.5, 10.0))
+    
+    # Release: AGC recovery based, clamped
+    rt_val = max(15.0, min(agc_rec * 0.8, 50.0))
+    
+    # Knee: moderate
+    kn = 0.5
+    
+    # Makeup: unity (don't add gain here)
+    mk = 1.0
+    
+    return {
+        "em": 1.0,  # Upward mode
+        "al": round(al, 4),
+        "er": round(er, 1),
+        "at": round(at_val, 1),
+        "rt": round(rt_val, 1),
+        "kn": round(kn, 3),
+        "mk": 1.0,
+        "g_in": 1.0,
+        "g_out": 1.0,
+        "scm": 1.0,   # RMS sidechain
+        "sla": 0.0,   # no lookahead
+    }
+
+
+def compute_eq_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP para_equalizer_x16_stereo (notches + air).
+    
+    Uses up to 3 notch bands for room modes + 1 hi-shelf for air.
+    Band is disabled (gain=1.0 = 0 dB) if prominence < 3 dB.
+    Position: after de-harsher, before saturator.
+    """
+    from cleaner.lv2_params import db_to_linear_gain
+    
+    modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
+    while len(modes_hz) < 3:
+        modes_hz.append(450)
+    modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
+    while len(modes_q) < 3:
+        modes_q.append(5)
+    prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
+    while len(prominences) < 3:
+        prominences.append(3)
+    
+    mult = report.get("_notch_multiplier", 1.0)
+    intensity = report.get("_intensity", 0.5)
+    air_db = report.get("_air", 1.5)
+    
+    params: dict[str, float] = {
+        "mode": 0.0,   # stereo mode
+        "g_in": 1.0,
+        "g_out": 1.0,
+    }
+    
+    # Notch bands (0, 1, 2)
+    for i in range(3):
+        f0 = modes_hz[i]
+        q_val = min(max(modes_q[i], 3.0), 10.0)
+        prom = abs(prominences[i])
+        
+        if prom < 3.0:
+            # Disable band
+            params[f"s_{i}"] = 0.0
+            params[f"g_{i}"] = 1.0  # 0 dB = linear gain 1.0
+            params[f"f_{i}"] = round(f0, 1)
+            params[f"w_{i}"] = 4.0
+            params[f"q_{i}"] = 0.0
+            params[f"ft_{i}"] = 0.0  # off
+            params[f"fm_{i}"] = 0.0
+        else:
+            depth_db = min(prom * 0.5, 9.0)
+            depth_db = max(depth_db, 2.0)
+            gain_db = -(depth_db * mult * intensity)
+            gain_db = max(gain_db, -12.0)
+            
+            params[f"s_{i}"] = 0.0  # not soloed
+            params[f"ft_{i}"] = 4.0  # Bell filter type
+            params[f"fm_{i}"] = 0.0  # default filter mode
+            params[f"f_{i}"] = round(f0, 1)
+            params[f"w_{i}"] = round(q_val / 2.5, 1)  # Q to width mapping
+            params[f"q_{i}"] = round(q_val, 1)
+            params[f"g_{i}"] = round(db_to_linear_gain(gain_db), 4)
+    
+    # Air band (band 3): hi-shelf at 8 kHz
+    air_enabled = air_db > 0.01
+    params["s_3"] = 0.0
+    if air_enabled:
+        params["ft_3"] = 6.0   # Hi-shelf type
+        params["fm_3"] = 0.0
+        params["f_3"] = 8000.0
+        params["w_3"] = 2.8    # Q≈0.7 mapped to width
+        params["q_3"] = 0.7
+        params["g_3"] = round(db_to_linear_gain(air_db), 4)
+    else:
+        params["ft_3"] = 0.0
+        params["fm_3"] = 0.0
+        params["f_3"] = 8000.0
+        params["w_3"] = 4.0
+        params["q_3"] = 0.0
+        params["g_3"] = 1.0
+    
+    # Remaining bands (4-15): disabled
+    for i in range(4, 16):
+        params[f"s_{i}"] = 0.0
+        params[f"ft_{i}"] = 0.0
+        params[f"fm_{i}"] = 0.0
+        params[f"f_{i}"] = 100.0 + i * 200.0
+        params[f"w_{i}"] = 4.0
+        params[f"q_{i}"] = 0.0
+        params[f"g_{i}"] = 1.0
+    
+    return params
+
+
+def compute_compressor_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP compressor_stereo (bus/glue).
+    
+    SSL-style glue compressor with parallel dry/wet mix.
+    Position: after saturator, before limiter.
+    Uses --bus-comp for threshold and mix (NOT --glue).
+    """
+    from cleaner.lv2_params import db_to_linear_gain
+    
+    crest = report.get("crest_factor_db", 12.0)
+    rms_db = report.get("rms_db", -15.0)
+    bus_comp = report.get("_bus_comp", 0.0)
+    
+    # Threshold: compress the body, not transients
+    bus_thresh_db = rms_db - crest * 0.3 + (1.0 - bus_comp) * 12.0
+    al = db_to_linear_gain(bus_thresh_db)
+    
+    # Dry/wet for parallel compression
+    cdr = max(0.0, 1.0 - bus_comp)  # dry
+    cwt = bus_comp                     # wet
+    
+    return {
+        "cm": 0.0,      # Downward compression
+        "al": round(al, 4),
+        "cr": 2.0,      # SSL classic 2:1
+        "at": 10.0,     # slow attack, lets transients through
+        "rt": 100.0,    # smooth release
+        "kn": 0.5,      # medium knee
+        "mk": 1.0,      # unity makeup
+        "cdr": round(cdr, 2),
+        "cwt": round(cwt, 2),
+        "g_in": 1.0,
+        "g_out": 1.0,
+        "scm": 1.0,     # RMS sidechain
+        "sla": 0.0,
+    }
+
+
+def compute_limiter_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP limiter_stereo (true-peak musical limiter).
+    
+    Replaces alimiter. Position: after compressor, before LUFS measurement.
+    """
+    from cleaner.lv2_params import db_to_linear_gain
+    
+    ceiling = report.get("_ceiling_db", -1.1)
+    
+    # Threshold in linear G (ceiling level)
+    th_val = db_to_linear_gain(ceiling)
+    
+    return {
+        "mode": 0.0,    # default mode
+        "th": round(th_val, 4),
+        "knee": 1.0,    # soft knee
+        "boost": 1.0,   # boost enabled
+        "lk": 5.0,      # 5 ms lookahead
+        "at": 5.0,      # 5 ms attack
+        "rt": 5.0,      # 5 ms release
+        "ovs": 4.0,     # 4x oversampling
+        "alr": 1.0,     # adaptive release enabled
+        "g_in": 1.0,
+        "g_out": 1.0,
+        "scp": 1.0,     # sidechain preamp
+    }
+
+
+def compute_deharsher_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP sc_compressor_stereo as de-harsher.
+    
+    Uses internal sidechain bandpass filter (shpf/slpf) to target
+    the harshness band (2.5-4.5 kHz). Opt-in via --deharsher.
+    Position: after M/S decode, before EQ.
+    """
+    harshness_index = report.get("harshness_index", 0.0)
+    tame_delta = report.get("_tame_cymbals", 0.0)
+    
+    # Convert harshness_index (decorr * log energy) to threshold
+    # Higher harshness -> lower threshold -> more reduction
+    base_threshold = max(0.01, 1.0 - harshness_index * 2.0)
+    threshold = max(0.005, base_threshold + tame_delta * 0.05)
+    
+    # Ratio: moderate, 1.5-3.0
+    ratio = max(1.5, min(3.0, 1.5 + harshness_index * 2.0 + abs(tame_delta) * 0.3))
+    
+    return {
+        "cm": 0.0,      # Downward (cut)
+        "al": round(threshold, 4),
+        "cr": round(ratio, 1),
+        "at": 5.0,      # moderate attack
+        "rt": 30.0,     # moderate release
+        "kn": 0.5,
+        "mk": 1.0,
+        "g_in": 1.0,
+        "g_out": 1.0,
+        "scm": 1.0,     # RMS sidechain
+        "sct": 1.0,     # Internal sidechain (use shpf/slpf)
+        "shpf": 2500.0, # HPF: bottom of harshness band
+        "slpf": 4500.0, # LPF: top of harshness band
+        "sla": 0.0,
+        "cdr": 0.0,
+        "cwt": 1.0,
+    }

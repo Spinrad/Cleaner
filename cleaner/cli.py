@@ -74,6 +74,8 @@ PRESETS: dict = {
               help="SSL bus compressor drive [0.0, 1.0].")
 @click.option("--intensity", type=float, default=0.5,
               help="Global intensity [0.0, 1.0]. Scales glue, notches, expander. 0=transparent, 1=maximum.")
+@click.option("--force-native", is_flag=True, default=False,
+              help="Use full-native ffmpeg chain (no LSP/LV2 plugins).")
 
 # Stage toggles (booleans)
 @click.option("--expander/--no-expander", default=True, help="Anti-AGC upward expansion.")
@@ -88,7 +90,7 @@ PRESETS: dict = {
 @click.version_option(version="0.1.0", prog_name="cleaner")
 def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
          notch_intensity, tame_cymbals, timeout, verbose,
-         glue, air, width, bus_comp, intensity,
+         glue, air, width, bus_comp, intensity, force_native,
          expander, ducking, deharsher, notches, saturation, limiter, lufs,
          hp35, hp150):
     """CLEANER -- Restore Post-Punk live recordings.
@@ -175,6 +177,6 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         tame_cymbals=tame_cymbals, notch_intensity=notch_intensity,
         glue=glue, air=air, width=width,
         bus_comp=bus_comp, intensity=intensity,
-        stages=stages,
+        stages=stages, force_native=force_native,
     )
     if not result.success: sys.exit(1)
