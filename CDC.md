@@ -1,24 +1,23 @@
 # CDC — cleaner v4.0.0 (cible)
 
-**Statut :** Design / Spécification cible — non implémenté.
-**Base :** cleaner v3.1.0 (architecture 100 % native ffmpeg).
+**Statut :** Implémenté (Phase 0 + Phase 1 livrées).
+**Version :** 0.1.0
 **Dernière mise à jour :** 2026-06-11
 
 ---
 
 ## 1. Vision
 
-Faire évoluer cleaner d'une architecture 100 % native ffmpeg vers une
-architecture **hybride ffmpeg + LSP/LV2**, où :
+Cleaner utilise désormais une architecture **hybride ffmpeg + LSP/LV2**, où :
 
 - Les **étages structurels** (décodage, resample, HP, encodage/décodage M/S,
   sidechain ducking, mesure LUFS, re‑limiteur post‑LUFS) restent en
   **ffmpeg natif**.
 - Les **étages de coloration** (expander anti‑AGC, notches EQ + air,
-  de‑harsher, saturation, bus compressor, limiteur musical) passent sur
+  de‑harsher, saturation, bus compressor, limiteur musical) utilisent
   des **plugins LSP au format LV2**, chargés via le filtre `lv2` natif
   de ffmpeg.
-- Le rendu reste en **single‑pass `filter_complex`** — aucun render
+- Le rendu s'effectue en **single‑pass `filter_complex`** — aucun render
   intermédiaire, aucune dépendance à Carla ou JACK.
 - L'installation des plugins LSP est la responsabilité de l'utilisateur
   final. Cleaner détecte leur présence au démarrage et échoue proprement
@@ -98,7 +97,7 @@ lv2ls | grep lsp                    # doit lister les plugins LSP
    utilisent `|` — le builder doit produire un graphe syntaxiquement
    valide pour ffmpeg.
 
-### 3.3 Deux builders, pas de fallback par étage
+### 3.3 Deux builders, pas de fallback par étage (implémenté)
 
 - **`lsp_chain_builder.py`** : construit le graphe avec nœuds `lv2`.
   Si un plugin LSP requis est absent → **échec propre** avec message
@@ -115,14 +114,14 @@ lv2ls | grep lsp                    # doit lister les plugins LSP
 
 Format : `http://lsp-plug.in/plugins/lv2/<slug>`
 
-Slugs cibles (à confirmer par introspection au runtime) :
+Slugs confirmés par introspection au runtime (voir `cleaner/lsp_uris.py`) :
 
 | Étage | Slug | Rôle |
 |-------|------|------|
 | Expander | `expander_stereo` | Anti‑AGC, Mode=Up |
 | EQ | `para_equalizer_x16_stereo` | Notches + air shelf |
 | De‑harsher | `sc_compressor_stereo` | Bande unique, réduction de dureté |
-| Saturator | `loud_comp_stereo` | Saturation (drive + hard clip) |
+| Saturator | `loud_comp_stereo` | Saturation (LSP n'a pas de `saturator_stereo` dédié) |
 | Compressor | `compressor_stereo` | Glue/bus, modes multiples |
 | Limiter | `limiter_stereo` | True‑peak, ALR |
 
@@ -360,7 +359,7 @@ en mode natif ou LSP.
 
 ## 10. Phases d'implémentation
 
-### Phase 0 — Jalon Saturator (banc d'essai)
+### Phase 0 — Jalon Saturator (banc d'essai) ✅ Livré
 1. `lv2_introspect.py` : découverte + introspection + cache
 2. `lv2_params.py` : conversions + clamp
 3. `gain_tracking.py` : suivi de niveau analytique
@@ -369,16 +368,14 @@ en mode natif ou LSP.
    - Cerveau → dict de contrôle → nœud lv2 → render → test A/B
 6. **Test d'audibilité** : rendu sweep → comparaison harmonique entrée/sortie
 
-**STOP après Phase 0 pour validation A/B.**
-
-### Phase 1 — Expansion
+### Phase 1 — Expansion ✅ Livré
 7. EQ LSP (notches + air)
 8. Compressor LSP (bus/glue)
 9. Expander LSP (anti‑AGC, remplace agate)
 10. Limiter LSP
 11. De‑harsher LSP
 
-### Phase 2 — Robustesse et polish
+### Phase 2 — Robustesse et polish (En cours / à faire)
 12. `--force-native` + détection LSP au démarrage
 13. Renforcement des tests preset (valeurs réelles)
 14. README.md final (archi hybride)

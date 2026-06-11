@@ -97,14 +97,14 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
 
     SOURCE is the audio file (any ffmpeg format: mp3, m4a, wav, flac...).
 
-    Architecture: Python analysis + native ffmpeg filter_complex chain.
-    Zero external DSP dependencies.
+    Architecture: Python analysis + hybrid ffmpeg + LSP/LV2 filter_complex chain.
+    LSP/LV2 plugins required for coloration stages (optional: --force-native for pure ffmpeg).
 
     \b
     Full chain (all enabled by default):
-      HP 35Hz -> Expander (anti-AGC) -> M/S encode -> Sidechain ducking
-      -> M/S decode -> De-harsher -> 3x Notch (room modes)
-      -> Tape saturation -> Limiter -> LUFS normalize
+      HP 35Hz -> Expander (LSP, anti-AGC) -> M/S encode -> Sidechain ducking
+      -> M/S decode -> De-harsher (LSP) -> 3x Notch (LSP EQ, room modes)
+      -> Tape saturation (LSP) -> Bus compressor (LSP) -> Limiter (LSP) -> LUFS normalize
 
     \b
     Examples:

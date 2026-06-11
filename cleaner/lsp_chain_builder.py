@@ -128,14 +128,8 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     )
     from cleaner.lv2_introspect import get_plugin_info
     from cleaner.lv2_params import clamp_to_port
-    
-    # Plugin URIs
-    EXPANDER_URI = "http://lsp-plug.in/plugins/lv2/expander_stereo"
-    EQ_URI = "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo"
-    SATURATOR_URI = "http://lsp-plug.in/plugins/lv2/loud_comp_stereo"
-    COMPRESSOR_URI = "http://lsp-plug.in/plugins/lv2/compressor_stereo"
-    LIMITER_URI = "http://lsp-plug.in/plugins/lv2/limiter_stereo"
-    DEHARSHER_URI = "http://lsp-plug.in/plugins/lv2/sc_compressor_stereo"
+    from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI, SATURATOR_URI,
+                                  COMPRESSOR_URI, LIMITER_URI, DEHARSHER_URI)
     
     def on(name: str) -> bool:
         defaults_off = {"glue": False, "air": False, "width": False, "bus_comp": False,
@@ -161,7 +155,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     chain = build_filtergraph_preamble()
     
     # ── Stage 1: Expander (LSP, replaces agate) ──
-    if on("expander") and on("intensity"):
+    if on("expander"):
         chain += "," + _clamped_lv2_node(EXPANDER_URI, compute_expander_lsp_params, report)
     
     # ── M/S encode ──

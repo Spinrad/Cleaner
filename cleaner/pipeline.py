@@ -1,4 +1,4 @@
-"""Pipeline orchestrator -- ffmpeg-native with rich output, before/after metrics."""
+"""Pipeline orchestrator -- hybrid ffmpeg + LSP/LV2, before/after metrics."""
 
 from __future__ import annotations
 import logging, shutil, subprocess, uuid
@@ -49,14 +49,8 @@ def _lsp_available() -> bool:
     """Check if required LSP plugins are available."""
     try:
         from cleaner.lv2_introspect import get_plugin_info
-        required = [
-            "http://lsp-plug.in/plugins/lv2/expander_stereo",
-            "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
-            "http://lsp-plug.in/plugins/lv2/loud_comp_stereo",
-            "http://lsp-plug.in/plugins/lv2/compressor_stereo",
-            "http://lsp-plug.in/plugins/lv2/limiter_stereo",
-            "http://lsp-plug.in/plugins/lv2/sc_compressor_stereo",
-        ]
+        from cleaner.lsp_uris import REQUIRED_URIS
+        required = REQUIRED_URIS
         for uri in required:
             info = get_plugin_info(uri)
             if info is None or not info.ports:

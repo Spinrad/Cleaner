@@ -8,6 +8,8 @@ from cleaner.analysis.clipping import detect_clipping
 from cleaner.analysis.dynamics import analyse_dynamics, FALLBACK as DF
 from cleaner.analysis.mid_side import analyse_mid_side, FALLBACK as MF
 
+from cleaner.lv2_params import db_to_linear_gain
+
 logger = logging.getLogger(__name__)
 AnalysisReport = dict[str, Any]
 
@@ -190,9 +192,6 @@ def compute_loud_comp_lsp_params(report: AnalysisReport) -> dict[str, float]:
     
     All values are in the port's native units (linear G for gains, dB for volume).
     """
-    from cleaner.lv2_params import db_to_linear_gain
-    import math
-    
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
     eff_glue = glue * (0.3 + intensity * 0.7)
@@ -237,8 +236,6 @@ def compute_expander_lsp_params(report: AnalysisReport) -> dict[str, float]:
     Replaces agate=mode=upward. Position: after HP35, before M/S encode.
     Uses GainTracker for initial levels only (expander is first in chain).
     """
-    from cleaner.lv2_params import db_to_linear_gain
-    
     crest = report.get("crest_factor_db", 12.0)
     peak_db = report.get("peak_db", -3.0)
     attack_ms = report.get("transient_attack_ms", 10.0)
@@ -291,8 +288,6 @@ def compute_eq_lsp_params(report: AnalysisReport) -> dict[str, float]:
     Band is disabled (gain=1.0 = 0 dB) if prominence < 3 dB.
     Position: after de-harsher, before saturator.
     """
-    from cleaner.lv2_params import db_to_linear_gain
-    
     modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
     while len(modes_hz) < 3:
         modes_hz.append(450)
@@ -380,8 +375,6 @@ def compute_compressor_lsp_params(report: AnalysisReport) -> dict[str, float]:
     Position: after saturator, before limiter.
     Uses --bus-comp for threshold and mix (NOT --glue).
     """
-    from cleaner.lv2_params import db_to_linear_gain
-    
     crest = report.get("crest_factor_db", 12.0)
     rms_db = report.get("rms_db", -15.0)
     bus_comp = report.get("_bus_comp", 0.0)
@@ -416,8 +409,6 @@ def compute_limiter_lsp_params(report: AnalysisReport) -> dict[str, float]:
     
     Replaces alimiter. Position: after compressor, before LUFS measurement.
     """
-    from cleaner.lv2_params import db_to_linear_gain
-    
     ceiling = report.get("_ceiling_db", -1.1)
     
     # Threshold in linear G (ceiling level)
