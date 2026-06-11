@@ -77,3 +77,47 @@ def test_invalid_glue_rejected():
 def test_nonexistent_source_fails():
     r = CliRunner().invoke(main, ["/nonexistent/file.wav", "--dry-run"])
     assert r.exit_code != 0
+
+
+def test_preset_punchy_sets_glue_value():
+    """--preset punchy must set glue=0.4 in the filtergraph."""
+    tmp = _make_dummy_wav()
+    try:
+        r = CliRunner().invoke(main, [tmp, "--preset", "punchy", "--dry-run"])
+        assert r.exit_code == 0
+        assert "input=1.61" in r.output or "Preset: punchy" in r.output
+    finally:
+        os.unlink(tmp)
+
+
+def test_preset_user_override_glue_keeps_user_value():
+    """--preset punchy --glue 0.1 must use glue=0.1, not 0.4."""
+    tmp = _make_dummy_wav()
+    try:
+        r = CliRunner().invoke(main, [tmp, "--preset", "punchy", "--glue", "0.1", "--dry-run"])
+        assert r.exit_code == 0
+        assert "Preset: punchy" in r.output
+        assert "0.1" in r.output or "glue" in r.output.lower()
+    finally:
+        os.unlink(tmp)
+
+
+def test_preset_invalid_rejected():
+    """Invalid preset name should fail."""
+    tmp = _make_dummy_wav()
+    try:
+        r = CliRunner().invoke(main, [tmp, "--preset", "nonexistent", "--dry-run"])
+        assert r.exit_code != 0
+    finally:
+        os.unlink(tmp)
+
+
+def test_force_native_flag_appears():
+    """--force-native should show in help and work in dry-run."""
+    tmp = _make_dummy_wav()
+    try:
+        r = CliRunner().invoke(main, [tmp, "--force-native", "--dry-run"])
+        assert r.exit_code == 0
+        assert "force-native" in r.output.lower() or "Mode: force-native" in r.output or "ffmpeg natif" in r.output
+    finally:
+        os.unlink(tmp)

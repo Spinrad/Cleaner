@@ -23,8 +23,6 @@ setup-opencode-agent.sh
 
 # Temporary / generated audio
 *.tmp.wav
-*.generated.carxp
-
 # OS
 .DS_Store
 Thumbs.db

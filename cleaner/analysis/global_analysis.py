@@ -182,7 +182,7 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
     return report
 
 
-def compute_loud_comp_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_loud_comp_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP loud_comp_stereo as saturator.
     
     Uses loud_comp_stereo as a saturation stage:
@@ -230,7 +230,7 @@ def compute_loud_comp_lsp_params(report: AnalysisReport) -> dict[str, float]:
     }
 
 
-def compute_expander_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP expander_stereo (anti-AGC, Mode=Up).
     
     Replaces agate=mode=upward. Position: after HP35, before M/S encode.
@@ -281,7 +281,7 @@ def compute_expander_lsp_params(report: AnalysisReport) -> dict[str, float]:
     }
 
 
-def compute_eq_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP para_equalizer_x16_stereo (notches + air).
     
     Uses up to 3 notch bands for room modes + 1 hi-shelf for air.
@@ -368,7 +368,7 @@ def compute_eq_lsp_params(report: AnalysisReport) -> dict[str, float]:
     return params
 
 
-def compute_compressor_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_compressor_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP compressor_stereo (bus/glue).
     
     SSL-style glue compressor with parallel dry/wet mix.
@@ -376,7 +376,10 @@ def compute_compressor_lsp_params(report: AnalysisReport) -> dict[str, float]:
     Uses --bus-comp for threshold and mix (NOT --glue).
     """
     crest = report.get("crest_factor_db", 12.0)
-    rms_db = report.get("rms_db", -15.0)
+    if tracker is not None:
+        rms_db = tracker.current_rms_dbfs
+    else:
+        rms_db = report.get("rms_db", -15.0)
     bus_comp = report.get("_bus_comp", 0.0)
     
     # Threshold: compress the body, not transients
@@ -404,15 +407,18 @@ def compute_compressor_lsp_params(report: AnalysisReport) -> dict[str, float]:
     }
 
 
-def compute_limiter_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_limiter_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP limiter_stereo (true-peak musical limiter).
     
     Replaces alimiter. Position: after compressor, before LUFS measurement.
     """
     ceiling = report.get("_ceiling_db", -1.1)
     
-    # Threshold in linear G (ceiling level)
-    th_val = db_to_linear_gain(ceiling)
+    # Use tracker's predicted peak if available, otherwise ceiling
+    if tracker is not None:
+        th_val = db_to_linear_gain(tracker.current_peak_dbfs)
+    else:
+        th_val = db_to_linear_gain(ceiling)
     
     return {
         "mode": 0.0,    # default mode
@@ -430,7 +436,7 @@ def compute_limiter_lsp_params(report: AnalysisReport) -> dict[str, float]:
     }
 
 
-def compute_deharsher_lsp_params(report: AnalysisReport) -> dict[str, float]:
+def compute_deharsher_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
     """Compute parameters for LSP sc_compressor_stereo as de-harsher.
     
     Uses internal sidechain bandpass filter (shpf/slpf) to target
