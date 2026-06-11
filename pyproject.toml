@@ -7,7 +7,7 @@ name = "cleaner"
 version = "0.1.0"
 description = "CLI DSP tool for restoring Post-Punk live recordings — ffmpeg-native architecture"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "scipy>=1.11.0",

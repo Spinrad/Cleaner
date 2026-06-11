@@ -178,3 +178,54 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
     gc.collect()
     logger.info("=== Phase 1 Complete: %d keys ===", len(report))
     return report
+
+
+def compute_loud_comp_lsp_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute parameters for LSP loud_comp_stereo as saturator.
+    
+    Uses loud_comp_stereo as a saturation stage:
+    - input gain = drive (from --glue and --intensity)
+    - hclip/hcrange/hcclean = saturation character
+    - volume = makeup gain
+    
+    All values are in the port's native units (linear G for gains, dB for volume).
+    """
+    from cleaner.lv2_params import db_to_linear_gain
+    import math
+    
+    glue = report.get("_glue", 0.15)
+    intensity = report.get("_intensity", 0.5)
+    eff_glue = glue * (0.3 + intensity * 0.7)
+    
+    # Drive: 0 dB (glue=0) to +16 dB (glue=1.0)
+    drive_db = eff_glue * 16.0
+    
+    # Input gain in linear G (loud_comp uses linear multiplier)
+    input_gain = db_to_linear_gain(drive_db)
+    
+    # Hard clip amount: increases with drive
+    hclip = max(0.0, min(1.0, eff_glue * 1.2))
+    
+    # Hard clip range: wider knee at higher drive
+    hcrange = 3.0 + eff_glue * 18.0  # 3 to 21 dB
+    
+    # Cleanliness: slightly dirty for character
+    hcclean = max(0.0, min(1.0, 0.6 - eff_glue * 0.3))
+    
+    # Volume makeup in dB (compensate ~40% of drive)
+    volume_db = -drive_db * 0.4
+    
+    # FFT size: higher = more precise at cost of latency
+    fft = 4.0 if eff_glue > 0.3 else 2.0
+    
+    return {
+        "input": round(input_gain, 4),
+        "volume": round(volume_db, 1),
+        "hclip": round(hclip, 3),
+        "hcrange": round(hcrange, 1),
+        "hcclean": round(hcclean, 3),
+        "fft": round(fft, 0),
+        "std": 1.0,   # stereo detector default
+        "refer": 0.0,  # reference mode off
+        "relspec": 0.0,  # relative spectrum off
+    }

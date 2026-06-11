@@ -63,7 +63,7 @@ lv2ls | grep lsp                    # doit lister les plugins LSP
 │      + 1 bande hi‑shelf pour l'air
 │      Mode Stereo (pas MidSide)
 │
-├─ 7. [LSP] Saturator                  saturator_stereo
+├─ 7. [LSP] Saturator                  loud_comp_stereo
 │      Piloté en drive + makeup.
 │      Mapping glue→drive (0→0 dB, 0.5→+6, 1→+12), modulé par --intensity
 │      Le signal entre RÉELLEMENT dans la zone non‑linéaire
@@ -122,7 +122,7 @@ Slugs cibles (à confirmer par introspection au runtime) :
 | Expander | `expander_stereo` | Anti‑AGC, Mode=Up |
 | EQ | `para_equalizer_x16_stereo` | Notches + air shelf |
 | De‑harsher | `sc_compressor_stereo` | Bande unique, réduction de dureté |
-| Saturator | `saturator_stereo` | Drive + makeup, coloration tape |
+| Saturator | `loud_comp_stereo` | Saturation (drive + hard clip) |
 | Compressor | `compressor_stereo` | Glue/bus, modes multiples |
 | Limiter | `limiter_stereo` | True‑peak, ALR |
 
@@ -151,11 +151,13 @@ vérité est l'introspection runtime (`lv2info <uri>` ou
 `lv2=...:c=help`). Chaque port sera confirmé avant d'être utilisé
 dans le code.
 
-Exemple pour `saturator_stereo` (à vérifier) :
-- `sg` : input gain (G linéaire)
-- `drive` : drive (G linéaire ou dB)
-- `owg` : output gain / makeup (G linéaire)
-- `ld_gain` : post‑filter gain
+Exemple pour `loud_comp_stereo` (à vérifier) :
+- `input` : input gain (G linéaire, 0–3981)
+- `volume` : output gain / makeup (dB, −83 à +7)
+- `hclip` : hard‑clip amount (0–1)
+- `hcrange` : hard‑clip range (0–24 dB)
+- `hcclean` : hard‑clip clean (0–1)
+- `fft` : FFT size (0–6)
 
 Exemple pour `expander_stereo` (à vérifier) :
 - `at_lvl` : attack level / threshold
@@ -243,6 +245,10 @@ la quantité d'expansion est pilotée par le Ratio.
   quasi‑constant en sortie)
 - **Pas** de modulation par mesure HF en v4.0 (option `--adaptive-drive`
   réservée pour v4.1)
+- **Note :** LSP ne fournit pas de plugin saturator dédié. On utilise
+  `loud_comp_stereo` qui expose `input` (drive G linéaire), `volume`
+  (makeup dB), `hclip`/`hcrange`/`hcclean` (caractère de saturation
+  par hard‑clip).
 
 #### Bus Compressor
 - **Mode** = Down (Downward compression)
@@ -400,3 +406,5 @@ en mode natif ou LSP.
 - LSP project : https://lsp-plug.in/
 - LV2 specification : https://lv2plug.in/
 - FFmpeg LV2 filter : https://ffmpeg.org/ffmpeg-filters.html#lv2
+- Note : le « saturator » utilise en réalité `loud_comp_stereo`
+  (LSP ne fournit pas de plugin saturator dédié).
