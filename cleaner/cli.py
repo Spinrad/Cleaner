@@ -1,4 +1,4 @@
-"""CLI for cleaner v3.1.0 — Complete DSP chain with per-stage control."""
+"""CLI for cleaner v0.1.0 — Complete DSP chain with per-stage control."""
 
 from __future__ import annotations
 import logging, sys
@@ -85,7 +85,7 @@ PRESETS: dict = {
 @click.option("--lufs/--no-lufs", default=True, help="LUFS normalisation.")
 @click.option("--hp35/--no-hp35", default=True, help="35Hz high-pass.")
 @click.option("--hp150/--no-hp150", default=True, help="150Hz Side high-pass.")
-@click.version_option(version="3.1.0", prog_name="cleaner")
+@click.version_option(version="0.1.0", prog_name="cleaner")
 def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
          notch_intensity, tame_cymbals, timeout, verbose,
          glue, air, width, bus_comp, intensity,

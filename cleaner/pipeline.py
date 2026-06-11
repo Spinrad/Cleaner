@@ -214,7 +214,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         stages = {}
     result = PipelineResult()
     click.echo()
-    click.secho("  cleaner v3.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
+    click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
 
     try:
         ffmpeg = require_ffmpeg()

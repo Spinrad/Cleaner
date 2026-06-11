@@ -1,6 +1,6 @@
-# cleaner v3.1.0
+# cleaner v0.1.0
 
-Post‑Punk live recording restoration. Python analysis drives a native ffmpeg
+Live recording restoration. Python analysis drives a native ffmpeg
 `filter_complex` DSP chain. Zero external plugin dependencies.
 
 ## What it does
@@ -175,6 +175,6 @@ in ffmpeg native. This allows:
   `adynamicequalizer`.
 
 LSP plugins are an external dependency (user‑installed). The current
-v3.1.0 architecture remains fully functional via `--force-native`.
+v0.1.0 architecture remains fully functional via `--force-native`.
 
 Status: **design phase** (see `CDC.md`). No LSP code has been written.
