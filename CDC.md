@@ -14,9 +14,12 @@ Cleaner utilise désormais une architecture **hybride ffmpeg + LSP/LV2**, où :
   sidechain ducking, mesure LUFS, re‑limiteur post‑LUFS) restent en
   **ffmpeg natif**.
 - Les **étages de coloration** (expander anti‑AGC, notches EQ + air,
-  de‑harsher, saturation, bus compressor, limiteur musical) utilisent
+  de‑harsher, bus compressor, limiteur musical) utilisent
   des **plugins LSP au format LV2**, chargés via le filtre `lv2` natif
   de ffmpeg.
+- La **saturation** est native ffmpeg (`asoftclip=type=tanh`), pilotée en
+  drive+makeup avec oversampling 4x. Aucun plugin saturateur LSP n'existe
+  dans la v1.2.12.
 - Le rendu s'effectue en **single‑pass `filter_complex`** — aucun render
   intermédiaire, aucune dépendance à Carla ou JACK.
 - L'installation des plugins LSP est la responsabilité de l'utilisateur
@@ -62,8 +65,8 @@ lv2ls | grep lsp                    # doit lister les plugins LSP
 │      + 1 bande hi‑shelf pour l'air
 │      Mode Stereo (pas MidSide)
 │
-├─ 7. [LSP] Saturator                  loud_comp_stereo
-│      Piloté en drive + makeup.
+├─ 7. [NATIF] Saturator                 asoftclip=type=tanh
+│      Piloté en drive + makeup, oversample 4x.
 │      Mapping glue→drive (0→0 dB, 0.5→+6, 1→+12), modulé par --intensity
 │      Le signal entre RÉELLEMENT dans la zone non‑linéaire
 │
@@ -121,9 +124,10 @@ Slugs confirmés par introspection au runtime (voir `cleaner/lsp_uris.py`) :
 | Expander | `expander_stereo` | Anti‑AGC, Mode=Up |
 | EQ | `para_equalizer_x16_stereo` | Notches + air shelf |
 | De‑harsher | `sc_compressor_stereo` | Bande unique, réduction de dureté |
-| Saturator | `loud_comp_stereo` | Saturation (LSP n'a pas de `saturator_stereo` dédié) |
 | Compressor | `compressor_stereo` | Glue/bus, modes multiples |
 | Limiter | `limiter_stereo` | True‑peak, ALR |
+
+**Note :** La saturation est native ffmpeg (`asoftclip=type=tanh`) pilotée en drive+makeup. Aucun plugin saturateur LSP n'existe dans la v1.2.12. Le plugin `clipper_stereo` (non testé) est une piste future.
 
 ### 4.2 Unités LSP
 

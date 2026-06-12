@@ -56,7 +56,7 @@ Enabled by default except where noted.
 | 5 | M/S decode | `stereotools=mode=ms>lr` [NATIF] | (structural — always on) |
 | 6 | De-harsher | `sc_compressor_stereo` (LSP, bandpass 2.5-4.5 kHz) [LSP] | `--deharsher` / `--no-deharsher` (default OFF) |
 | 7 | Room-mode notches (x3) | `para_equalizer_x16_stereo` (LSP, Bell type) [LSP] | `--notches` / `--no-notches` |
-| 8 | Saturation | `loud_comp_stereo` (LSP, drive + hard clip) [LSP] | `--saturation` / `--no-saturation` |
+| 8 | Saturation | `asoftclip=type=tanh` (native, drive + makeup, 4x oversample) [NATIF] | `--saturation` / `--no-saturation` |
 | 9 | Air shelf | `para_equalizer_x16_stereo` (LSP, hi-shelf 8 kHz, same EQ node) [LSP] | `--air` / (value ≤ 0.01 → off) |
 | 10 | Stereo width | `stereotools=mode=lr>lr` (base spread) [NATIF] | `--width` / (abs ≤ 0.001 → off) |
 | 11 | Bus compressor | `compressor_stereo` (LSP, SSL-style, parallel) [LSP] | `--bus-comp` / (value ≤ 0.01 → off) |
@@ -66,8 +66,8 @@ Enabled by default except where noted.
 
 When `--force-native` is used, the [LSP] stages are replaced by native ffmpeg
 equivalents: `agate=mode=upward` for expander, `anequalizer` for notches,
-`asoftclip=type=tanh` for saturation, `acompressor` for bus compressor,
-`adynamicequalizer` for de-harsher, and `alimiter` for the limiter.
+`acompressor` for bus compressor, `adynamicequalizer` for de-harsher,
+and `alimiter` for the limiter.
 
 ## Presets
 

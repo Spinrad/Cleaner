@@ -140,7 +140,11 @@ def _parse_ffmpeg_lv2_help(stderr: str) -> dict[str, PortInfo]:
             min_v, max_v, def_v = float(min_s), float(max_s), float(def_s)
         except ValueError:
             continue
-        unit = _infer_unit(symbol, desc, min_v, max_v, def_v)
+        from cleaner.lv2_params import EXPLICIT_UNITS
+        if symbol in EXPLICIT_UNITS:
+            unit = EXPLICIT_UNITS[symbol]
+        else:
+            unit = _infer_unit(symbol, desc, min_v, max_v, def_v)
         ports[symbol] = PortInfo(
             symbol=symbol, name=desc,
             min_val=min_v, max_val=max_v, default_val=def_v,

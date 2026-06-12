@@ -317,6 +317,57 @@ class TestFullLSPChain:
             print(f"\nH3 relative to fundamental: {h3:.1f} dB")
             assert h3 > -60.0, f"H3 too quiet: {h3:.1f} dB (tanh saturation not working in full chain)"
 
+class TestSaturationSweep:
+    """Verify tanh saturation produces monotonic harmonic increase."""
+
+    def test_glue_sweep_monotonic(self):
+        """H3/fund ratio must increase monotonically with glue from 0 to 1."""
+        import math, tempfile, subprocess
+        from pathlib import Path
+        import numpy as np, soundfile as sf
+
+        sr = 48000
+        dur = 1.0
+        t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+        amp = 10 ** (-1 / 20)
+
+        def h3_ratio(y):
+            window = np.hanning(len(y))
+            fft = np.abs(np.fft.rfft(y * window))
+            freqs = np.fft.rfftfreq(len(y), 1 / sr)
+            def peak_at(f):
+                idx = np.argmin(np.abs(freqs - f))
+                lo, hi = max(0, idx-2), min(len(fft)-1, idx+2)
+                return np.max(fft[lo:hi+1])
+            fund = peak_at(1000)
+            h3 = peak_at(3000)
+            return h3 / fund if fund > 1e-10 else 0.0
+
+        ratios = []
+        for glue in [0.0, 0.15, 0.3, 0.5, 0.8, 1.0]:
+            with tempfile.TemporaryDirectory() as tmp:
+                iw = Path(tmp) / "in.wav"; ow = Path(tmp) / "out.wav"
+                y = amp * np.sin(2 * math.pi * 1000 * t)
+                sf.write(str(iw), np.column_stack([y, y.copy()]).astype(np.float32), sr, subtype="PCM_24")
+                eff = glue * (0.3 + 0.5 * 0.7)
+                drive = eff * 16.0
+                thresh = 0.92 - eff * 0.35
+                graph = f"[0:a]aresample={sr},volume={drive}dB,asoftclip=type=tanh:threshold={thresh}:output=1.0:oversample=4,volume={-drive*0.4:.1f}dB[out]"
+                proc = subprocess.run(["ffmpeg", "-y", "-nostdin", "-i", str(iw), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s24le", str(ow)], capture_output=True, text=True, timeout=30)
+                assert proc.returncode == 0
+                y_out, _ = sf.read(str(ow), always_2d=True, dtype='float32')
+                ratios.append(h3_ratio(np.mean(y_out, axis=1)))
+
+        # Must be monotonic
+        for i in range(len(ratios)-1):
+            assert ratios[i] <= ratios[i+1] * 1.01, (
+                f"Not monotonic at glue index {i}: {ratios[i]:.6f} > {ratios[i+1]:.6f}"
+            )
+        # glue=0 must be near zero
+        assert ratios[0] < 0.02, f"glue=0 has harmonics: {ratios[0]:.4f}"
+        # glue=0.15 must show subtle increase
+        assert ratios[1] > ratios[0] * 1.1, f"glue=0.15 no increase: {ratios[1]:.6f} <= {ratios[0]:.6f}"
+
 
 def test_smoke_full_native_chain():
     """Full native chain renders without error."""
