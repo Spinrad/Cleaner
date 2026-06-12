@@ -11,7 +11,8 @@ pass:
 - **Structural stages** (resample, HP, M/S encode/decode, sidechain ducking,
   LUFS measurement, post-limiter) use **native ffmpeg filters**.
 - **Coloration stages** (expander anti-AGC, notches EQ, air shelf, de-harsher,
-  saturation, bus compressor, musical limiter) use **LSP plugins via LV2**,
+  bus compressor, musical limiter) use **LSP plugins via LV2**.
+  Saturation is **native ffmpeg** (`asoftclip=type=tanh`).,
   loaded through ffmpeg's native `lv2` filter.
 
 When LSP plugins are unavailable, `--force-native` falls back to a pure ffmpeg
@@ -29,8 +30,8 @@ Requires Python ≥ 3.11, ffmpeg ≥ 5.0, and LSP plugins:
 sudo apt install ffmpeg lsp-plugins-lv2
 ```
 
-Cleaner auto-detects LSP at startup. If plugins are missing, it reports the
-error and suggests `--force-native` as a fallback.
+Cleaner auto-detects LSP at startup. If plugins are missing, it falls back to
+native ffmpeg with a warning. Use `--force-native` to suppress the warning.
 
 ## Usage
 
@@ -155,18 +156,20 @@ pytest tests/ -v
 ## Limitations (honest)
 
 - **LSP plugins required.** The default chain needs `lsp-plugins-lv2` installed.
-  Without them, use `--force-native` for pure ffmpeg processing (with reduced
-  fidelity: tanh soft-clip instead of LSP saturation, `anequalizer` instead of
+  Without them, the chain falls back to pure ffmpeg processing (with reduced
+  fidelity: `agate` instead of LSP expander, `anequalizer` instead of
   parametric EQ, `alimiter` instead of true-peak LSP limiter).
+  Saturation is always native tanh in both modes.
 - **Conservative processing.** The analysis is richer than the treatment.
   Parameters are deliberately restrained — the goal is restoration, not
   re-creation.
 - **Upward expansion cannot restore crushed transients.** A smartphone AGC
   has already destroyed information. The expander can only amplify what remains.
-- **Tape saturation uses `loud_comp_stereo`**, not a dedicated saturator plugin.
-  LSP does not provide a `saturator_stereo`. The hard-clip stage of
-  `loud_comp_stereo` provides the saturation character, driven by `--glue`
-  and `--intensity`.
+- **Saturation is native ffmpeg** (`asoftclip=type=tanh`, 4× oversampling).
+  LSP v1.2.12 does not provide a saturator plugin. The tanh soft-clip is
+  driven into its non-linear zone by `--glue` (0→0 dB drive, 1→+16 dB drive)
+  and compensated with automatic makeup gain. At default settings
+  (`glue=0.15`), the effect is subtle but measurable (+52% H3 at -1 dBFS).
 - **LUFS gain is clamped to [-3, +6] dB.** If the processed file is very
   quiet or very loud relative to the target, the target may not be reached.
   The output always reports the actual value achieved.

@@ -147,31 +147,43 @@ lv2=p='<uri>':c=help -f null -` (ffmpeg imprime les contrôles sur stderr).
 L'introspection est **cachée** (JSON sur disque) et **rafraîchie si la
 version de LSP change**.
 
-### 4.4 Ports réels — source de vérité
+### 4.4 Ports réels — confirmés par introspection
 
-Les symboles de ports ci‑dessous sont **indicatifs**. La source de
-vérité est l'introspection runtime (`lv2info <uri>` ou
-`lv2=...:c=help`). Chaque port sera confirmé avant d'être utilisé
-dans le code.
+Les ports ci-dessous sont confirmés par `lv2info` + ffmpeg `:c=help`.
+La table `EXPLICIT_UNITS` dans `lv2_params.py` encode les unités de chaque
+symbole piloté. Aucun symbole n'est deviné.
 
-Exemple pour `loud_comp_stereo` (à vérifier) :
-- `input` : input gain (G linéaire, 0–3981)
-- `volume` : output gain / makeup (dB, −83 à +7)
-- `hclip` : hard‑clip amount (0–1)
-- `hcrange` : hard‑clip range (0–24 dB)
-- `hcclean` : hard‑clip clean (0–1)
-- `fft` : FFT size (0–6)
-
-Exemple pour `expander_stereo` (à vérifier) :
-- `at_lvl` : attack level / threshold
-- `rat` : ratio
-- `at` : attack time (s)
-- `rt` : release time (s)
-- `kn` : knee
+Expander (`expander_stereo`) :
+- `em` : mode (0=Down, 1=Up) → 1
+- `al` : attack level / threshold (G linéaire, 0.001–1)
+- `er` : ratio (1–100)
+- `at` : attack time (ms, 0–2000)
+- `rt` : release time (ms, 0–5000)
+- `kn` : knee (G linéaire, 0.063–1)
 - `mk` : makeup gain (G linéaire)
 
-Note : le LSP `expander_stereo` n'a pas de port "range" (contrairement
-à l'agate natif). La quantité d'expansion est pilotée par le Ratio.
+Compressor (`compressor_stereo`) :
+- `cm` : mode (0=Down, 1=Up, 2=Boost) → 0
+- `al`, `at`, `rt`, `kn`, `mk` : idem expander
+- `cr` : ratio (1–100)
+- `cdr`/`cwt` : dry/wet gain (G linéaire, 0–10)
+
+Limiter (`limiter_stereo`) :
+- `th` : threshold (G linéaire) → ceiling
+- `lk` : lookahead (s, 0.1–20)
+- `at`, `rt` : attack/release (s, 0.25–20)  ← SECONDS, pas ms
+- `ovs` : oversampling (0–20)
+- `alr` : adaptive release (bool, 0–1)
+
+EQ (`para_equalizer_x16_stereo`) — 16 bandes, format `{prefix}_{i}` :
+- `ft_{i}` : filter type (0–11, 4=Bell, 6=HiShelf)
+- `f_{i}` : frequency (Hz, 10–24000)
+- `w_{i}` : width (0–12)
+- `g_{i}` : gain (G linéaire, 0.016–63)
+- `q_{i}` : Q factor (0–100)
+
+De‑harsher (`sc_compressor_stereo`) :
+- Ports du compresseur + `sct` (sidechain type), `shpf`/`slpf` (Hz)
 
 ## 5. Cerveau refondu
 
@@ -244,14 +256,16 @@ la quantité d'expansion est pilotée par le Ratio.
   - `glue=0.5` → +4–6 dB (saturation audible)
   - `glue=1.0` → +12 dB (saturation marquée)
   - Le mapping est modulé par `--intensity`
-- **Makeup (dB)** ← −drive × 0.5 (compensation automatique, niveau
+- **Makeup (dB)** ← −drive × 0.4 (compensation automatique, niveau
   quasi‑constant en sortie)
 - **Pas** de modulation par mesure HF en v4.0 (option `--adaptive-drive`
   réservée pour v4.1)
-- **Note :** LSP ne fournit pas de plugin saturator dédié. On utilise
-  `loud_comp_stereo` qui expose `input` (drive G linéaire), `volume`
-  (makeup dB), `hclip`/`hcrange`/`hcclean` (caractère de saturation
-  par hard‑clip).
+- **Note :** La saturation est native ffmpeg (`asoftclip=type=tanh`, 4×
+  oversampling). LSP v1.2.12 ne fournit pas de plugin saturateur. Le
+  signal est poussé dans le tanh via un gain d'entrée (drive), compensé
+  par un gain de sortie (makeup). Le mapping effectif est :
+  `eff_glue = glue × (0.3 + intensity × 0.7)`, drive = eff_glue × 16 dB,
+  seuil = 0.92 − eff_glue × 0.35, makeup = −drive × 0.4.
 
 #### Bus Compressor
 - **Mode** = Down (Downward compression)
@@ -266,7 +280,7 @@ la quantité d'expansion est pilotée par le Ratio.
 
 #### Limiter
 - **Mode** = true‑peak avec oversampling
-- **Threshold (dB)** ← niveau peak prédit (after bus comp)
+- **Threshold = ceiling (brickwall, --ceiling en G linéaire)**
 - **Ceiling (dB)** ← `--ceiling` (linéaire)
 - **ALR** (adaptive release) activé
 - **Post‑LUFS re‑limiteur** : reste un `alimiter` natif (filet de sécurité
@@ -279,7 +293,7 @@ Scale simultanément :
 - **Notch depth** (déjà fait en v3.1)
 - **Saturator drive** (nouveau en v4)
 
-Mapping : `intensity ∈ [0, 1]` → multiplicateur `0.2 + intensity × 0.8`
+Mapping : `intensity ∈ [0, 1]` → multiplicateur `0.3 + intensity × 0.7`
 appliqué au drive, au ratio expander et à la profondeur des notches.
 intensity=0 → effet nul, intensity=1 → effet maximal.
 
@@ -325,7 +339,7 @@ Contraintes d'échappement :
 Au démarrage :
   1. Détection LSP : lsp_available = (lv2ls renvoie les URIs requises)
   2. Si --force-native → utiliser ffmpeg_chain.py (full natif)
-  3. Si LSP non disponible → message d'erreur + suggestion --force-native
+  3. Si LSP non disponible → fallback natif avec avertissement
   4. Si LSP disponible → utiliser lsp_chain_builder.py
 ```
 
@@ -343,8 +357,9 @@ en mode natif ou LSP.
 
 ### Nouveaux
 - `--force-native` : utilise le builder full‑natif (v3.1).
-  Sans ce flag, le mode LSP est le défaut et l'absence d'un plugin
-  requis provoque un échec propre avec message d'installation.
+  Sans ce flag, le mode LSP est le défaut. Si les plugins sont absents,
+  le pipeline bascule automatiquement sur le mode natif avec un
+  avertissement.
 
 ### Modifiés
 - `--intensity` : scale maintenant aussi le drive du saturateur (en plus
@@ -408,5 +423,3 @@ en mode natif ou LSP.
 - LSP project : https://lsp-plug.in/
 - LV2 specification : https://lv2plug.in/
 - FFmpeg LV2 filter : https://ffmpeg.org/ffmpeg-filters.html#lv2
-- Note : le « saturator » utilise en réalité `loud_comp_stereo`
-  (LSP ne fournit pas de plugin saturator dédié).
