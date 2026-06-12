@@ -318,7 +318,7 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     air_enabled = air_db > 0.01
     params["s_3"] = 0.0
     if air_enabled:
-        params["ft_3"] = 6.0   # Hi-shelf type
+        params["ft_3"] = 7.0   # High-shelf type (6=LowShelf, 7=HighShelf)
         params["fm_3"] = 0.0
         params["f_3"] = 8000.0
         params["w_3"] = 2.8    # Q≈0.7 mapped to width
