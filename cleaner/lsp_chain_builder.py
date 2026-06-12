@@ -98,8 +98,8 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     
     Architecture:
       Preamble (native) → Expander (LSP) → M/S+ducking (native) → De-harsher (LSP)
-      → EQ (LSP) → Saturator (LSP) → Compressor (LSP) → Limiter (LSP)
-      → Postamble (native LUFS + alimiter)
+      → EQ (LSP) → Saturation (native asoftclip tanh) → Compressor (LSP)
+      → Width (native) → Limiter (LSP) → Postamble (native safety limiter)
     
     Args:
         report: AnalysisReport with LSP params already computed.
@@ -114,12 +114,12 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
         compute_compressor_lsp_params,
         compute_limiter_lsp_params,
         compute_deharsher_lsp_params,
-        compute_loud_comp_lsp_params,
+        compute_native_saturation_params,
     )
     from cleaner.gain_tracking import GainTracker
     from cleaner.lv2_introspect import get_plugin_info
     from cleaner.lv2_params import clamp_to_port
-    from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI, SATURATOR_URI,
+    from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI,
                                   COMPRESSOR_URI, LIMITER_URI, DEHARSHER_URI)
     
     peak_db = report.get("peak_db", -3.0)
@@ -132,16 +132,26 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
         return stages.get(name, not defaults_off.get(name, True))
     
     def _clamped_lv2_node(uri, compute_fn, *args):
-        """Build a clamped LV2 node from a compute function."""
+        """Build a clamped LV2 node from a compute function.
+        
+        Raises RuntimeError if any symbol is not found in the plugin's ports.
+        """
         params = compute_fn(*args)
         plugin = get_plugin_info(uri)
+        if plugin is None or not plugin.ports:
+            raise RuntimeError(
+                f"LV2 plugin introspection failed for {uri}. "
+                f"Cannot validate port symbols."
+            )
         clamped = {}
         for sym, val in params.items():
-            port = plugin.ports.get(sym) if plugin else None
-            if port:
-                clamped[sym] = clamp_to_port(val, port, convert_unit=False)
-            else:
-                clamped[sym] = val
+            port = plugin.ports.get(sym)
+            if port is None:
+                raise RuntimeError(
+                    f"Unknown port symbol '{sym}' for plugin {uri}. "
+                    f"Available ports: {sorted(plugin.ports.keys())}"
+                )
+            clamped[sym] = clamp_to_port(val, port, convert_unit=True)
         return build_lv2_node(uri, clamped)
     
     parts: list[str] = []
@@ -191,14 +201,16 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
         air_gain = report.get("_air", 1.5) if on("air") else 0.0
         tracker.commit("eq", notch_gain + air_gain, "notches + air")
     
-    # ── Stage: Saturator (LSP loud_comp) ──
+    # ── Stage: Saturation (native asoftclip tanh) ──
     if on("saturation") and on("glue"):
-        tail += "," + _clamped_lv2_node(SATURATOR_URI, compute_loud_comp_lsp_params, report, tracker)
-        glue = report.get("_glue", 0.15)
-        intensity = report.get("_intensity", 0.5)
-        eff_glue = glue * (0.3 + intensity * 0.7)
-        sat_net_gain = eff_glue * 16.0 * 0.6
-        tracker.commit("saturator", sat_net_gain, "drive + clip + makeup")
+        sat_params = compute_native_saturation_params(report)
+        tail += (
+            f",volume={sat_params['sat_drive_db']}dB,"
+            f"asoftclip=type=tanh:threshold={sat_params['sat_threshold_linear']}:output=1.0:oversample=4,"
+            f"volume={sat_params['sat_makeup_db']}dB"
+        )
+        sat_net_gain = sat_params['sat_drive_db'] + sat_params['sat_makeup_db']
+        tracker.commit("saturation", sat_net_gain, "drive + tanh + makeup")
     
     # ── Stage: Bus Compressor (LSP) ──
     if on("bus_comp"):
@@ -207,18 +219,17 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
         comp_gain = -bus * 4.0
         tracker.commit("compressor", comp_gain, "bus glue")
     
-    # ── Stage: Limiter (LSP) ──
-    if on("limiter"):
-        tail += "," + _clamped_lv2_node(LIMITER_URI, compute_limiter_lsp_params, report, tracker)
-        tracker.commit("limiter", 0.0, "peak ceiling")
-    
     # ── Stage: Width (native stereotools) ──
     w = report.get("_width", 0.0)
     if on("width"):
         tail += f",stereotools=mode=lr>lr:base={w}:slev=1:mlev=1"
     
-    # ── Postamble: LUFS + safety limiter (native) ──
-    tail += ",ebur128=peak=true:framelog=quiet"
+    # ── Stage: Limiter (LSP) ──
+    if on("limiter"):
+        tail += "," + _clamped_lv2_node(LIMITER_URI, compute_limiter_lsp_params, report, tracker)
+        tracker.commit("limiter", 0.0, "peak ceiling")
+    
+    # ── Postamble: safety limiter (native) ──
     ceiling = report.get('_ceiling_db', -1.1)
     post_ceiling = ceiling + 0.3 if on("limiter") else ceiling
     post_ceiling = min(post_ceiling, -0.3)  # never above -0.3 dBFS

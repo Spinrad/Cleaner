@@ -37,7 +37,34 @@ class PluginInfo:
     ports: dict[str, PortInfo] = field(default_factory=dict)
 
 
+def _run_lv2ls_list() -> list[str]:
+    """Run lv2ls and return list of URIs."""
+    try:
+        result = subprocess.run(
+            ["lv2ls"], capture_output=True, text=True, timeout=15
+        )
+        uris = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("http") or line.startswith("urn:"):
+                uris.append(line)
+        if not uris and result.stderr:
+            for line in result.stderr.splitlines():
+                line = line.strip()
+                if line.startswith("http") or line.startswith("urn:"):
+                    uris.append(line)
+        return uris
+    except FileNotFoundError:
+        return _run_lv2file_list()
+    except Exception as exc:
+        logger.warning("lv2ls failed: %s", exc)
+        return _run_lv2file_list()
+
+
 def _run_lv2file_list() -> list[str]:
+    """Fallback discovery via lv2file -l."""
     try:
         result = subprocess.run(
             ["lv2file", "-l"], capture_output=True, text=True, timeout=15
@@ -54,7 +81,7 @@ def _run_lv2file_list() -> list[str]:
                 uris.append(line)
         return uris
     except FileNotFoundError:
-        logger.warning("lv2file not found")
+        logger.warning("lv2file not found — LV2 discovery disabled")
         return []
     except Exception as exc:
         logger.warning("lv2file -l failed: %s", exc)
@@ -62,7 +89,7 @@ def _run_lv2file_list() -> list[str]:
 
 
 def discover_plugins(prefix: str = LSP_URI_PREFIX) -> dict[str, str]:
-    all_uris = _run_lv2file_list()
+    all_uris = _run_lv2ls_list()
     found: dict[str, str] = {}
     for uri in all_uris:
         if uri.startswith(prefix):
@@ -216,7 +243,7 @@ def get_plugin_info(uri: str) -> Optional[PluginInfo]:
 
 
 def _plugin_exists(uri: str) -> bool:
-    all_uris = _run_lv2file_list()
+    all_uris = _run_lv2ls_list()
     return uri in all_uris
 
 

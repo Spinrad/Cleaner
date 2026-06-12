@@ -260,9 +260,8 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         stages = {}
     result = PipelineResult()
     click.echo()
-    if force_native:
-        click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
-    elif _lsp_available():
+    use_lsp = not force_native and _lsp_available()
+    if use_lsp:
         click.secho("  cleaner v0.1.0 -- hybrid ffmpeg + LSP/LV2 chain", fg="cyan", bold=True)
     else:
         click.secho("  cleaner v0.1.0 -- ffmpeg-native DSP chain", fg="cyan", bold=True)
@@ -308,20 +307,16 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
 
         # 4. Filtergraph
         click.echo("  [3/5] Construction de la chaine DSP...")
-        use_lsp = not force_native and _lsp_available()
         if use_lsp:
             click.secho("  Mode: LSP/LV2 (plugins detectes)", fg="cyan")
             graph = build_lsp_filtergraph(report, stages)
-        elif force_native:
-            click.secho("  Mode: force-native (ffmpeg natif)", fg="cyan")
-            graph = build_filtergraph(report, stages)
         else:
-            click.secho("  [!] LSP plugins non trouves.", fg="yellow")
-            click.secho("  Utilisez --force-native pour le rendu natif ffmpeg.", fg="yellow")
-            raise RuntimeError(
-                "LSP plugins not found. Install: sudo apt install lsp-plugins-lv2\n"
-                "Or use --force-native for ffmpeg-native processing."
-            )
+            if not force_native and not _lsp_available():
+                click.secho("  [!] LSP plugins non trouves — fallback natif.", fg="yellow")
+                click.secho("  Utilisez --force-native pour supprimer cet avertissement.", fg="yellow")
+            else:
+                click.secho("  Mode: ffmpeg natif", fg="cyan")
+            graph = build_filtergraph(report, stages)
         _print_chain_summary(report, stages, use_lsp)
 
         if dry_run:

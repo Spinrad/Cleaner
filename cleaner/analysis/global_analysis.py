@@ -30,7 +30,7 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
         10.0 ** (exp_thresh_db / 20.0), 4
     )
     # Very gentle ratio: 1.1-1.5
-    report["expander_ratio"] = round(min(1.1 + crest * 0.02, 1.5), 1)
+    report["expander_ratio"] = round(max(1.1, min(1.5, 1.6 - crest * 0.03)), 1)
     # Fast attack to catch transients
     report["expander_attack_ms"] = round(max(min(attack_ms * 0.5, 10.0), 1.0), 1)
     # Quick release to avoid pumping
@@ -176,57 +176,32 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
     report.setdefault("duration_s", 0.0)
     report.setdefault("sample_rate", 48000)
     if failures: report["_analysis_warnings"] = failures
-    report = compute_ffmpeg_params(report)
     gc.collect()
     logger.info("=== Phase 1 Complete: %d keys ===", len(report))
     return report
 
 
-def compute_loud_comp_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP loud_comp_stereo as saturator.
+def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]:
+    """Compute native ffmpeg asoftclip saturation params (drive + makeup).
     
-    Uses loud_comp_stereo as a saturation stage:
-    - input gain = drive (from --glue and --intensity)
-    - hclip/hcrange/hcclean = saturation character
-    - volume = makeup gain
-    
-    All values are in the port's native units (linear G for gains, dB for volume).
+    Uses asoftclip=type=tanh with proper drive so the signal ENTERS
+    the non-linear zone. Returns params for ffmpeg_chain format:
+    sat_drive_db, sat_makeup_db, sat_threshold_linear.
     """
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
     eff_glue = glue * (0.3 + intensity * 0.7)
     
-    # Drive: 0 dB (glue=0) to +16 dB (glue=1.0)
     drive_db = eff_glue * 16.0
     
-    # Input gain in linear G (loud_comp uses linear multiplier)
-    input_gain = db_to_linear_gain(drive_db)
+    threshold_linear = round(0.92 - eff_glue * 0.35, 3)
     
-    # Hard clip amount: increases with drive
-    hclip = max(0.0, min(1.0, eff_glue * 1.2))
-    
-    # Hard clip range: wider knee at higher drive
-    hcrange = 3.0 + eff_glue * 18.0  # 3 to 21 dB
-    
-    # Cleanliness: slightly dirty for character
-    hcclean = max(0.0, min(1.0, 0.6 - eff_glue * 0.3))
-    
-    # Volume makeup in dB (compensate ~40% of drive)
-    volume_db = -drive_db * 0.4
-    
-    # FFT size: higher = more precise at cost of latency
-    fft = 4.0 if eff_glue > 0.3 else 2.0
+    makeup_db = round(-drive_db * 0.4, 1)
     
     return {
-        "input": round(input_gain, 4),
-        "volume": round(volume_db, 1),
-        "hclip": round(hclip, 3),
-        "hcrange": round(hcrange, 1),
-        "hcclean": round(hcclean, 3),
-        "fft": round(fft, 0),
-        "std": 1.0,   # stereo detector default
-        "refer": 0.0,  # reference mode off
-        "relspec": 0.0,  # relative spectrum off
+        "sat_drive_db": round(drive_db, 1),
+        "sat_makeup_db": makeup_db,
+        "sat_threshold_linear": threshold_linear,
     }
 
 
@@ -252,7 +227,9 @@ def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[st
     # Ratio: DECREASES with crest (more expansion when compressed)
     # crest=4 (AGC) -> 1.48, crest=12 -> 1.24, crest=18 -> 1.1
     base_ratio = max(1.1, 1.6 - crest * 0.03)
-    er = max(1.1, min(1.5, base_ratio * intensity))
+    # Intensity scales the amount ABOVE 1.0: er = 1.0 + (base_ratio - 1.0) * intensity
+    er = 1.0 + (base_ratio - 1.0) * intensity
+    er = max(1.05, min(1.5, er))  # clamp to real port range
     
     # Attack: fast to catch transients
     at_val = max(1.0, min(attack_ms * 0.5, 10.0))
@@ -414,11 +391,8 @@ def compute_limiter_lsp_params(report: AnalysisReport, tracker=None) -> dict[str
     """
     ceiling = report.get("_ceiling_db", -1.1)
     
-    # Use tracker's predicted peak if available, otherwise ceiling
-    if tracker is not None:
-        th_val = db_to_linear_gain(tracker.current_peak_dbfs)
-    else:
-        th_val = db_to_linear_gain(ceiling)
+    # Threshold = ceiling (brickwall), NOT predicted peak
+    th_val = db_to_linear_gain(ceiling)
     
     return {
         "mode": 0.0,    # default mode

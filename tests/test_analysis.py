@@ -120,10 +120,11 @@ class TestMidSide:
 
 class TestGlobalAnalysis:
     def test_full(self):
-        from cleaner.analysis.global_analysis import get_global_analysis
+        from cleaner.analysis.global_analysis import get_global_analysis, compute_ffmpeg_params
         with tempfile.TemporaryDirectory() as d:
             w = Path(d)/"f.wav"; _persistent_modes(w, 5)
             r = get_global_analysis(str(w))
+            r = compute_ffmpeg_params(r)
             for k in ["crest_factor_db", "room_modes_hz", "comp_threshold_linear", "notch_freq_1", "notch_q_1", "notch_gain_1", "limiter_ceiling_linear"]:
                 assert k in r, f"Missing {k}"
 
