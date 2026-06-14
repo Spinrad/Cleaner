@@ -259,9 +259,10 @@ def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[st
 
 
 def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP para_equalizer_x16_stereo (notches + air).
-    
-    Uses up to 3 notch bands for room modes + 1 Bell band for air at 10 kHz.
+    """Compute parameters for LSP para_equalizer_x16_stereo (notches + air + clean-mediums).
+
+    Uses up to 3 notch bands for room modes + 1 Bell for air at 10 kHz
+    + 1 Bell for low-mid cleanup at 600 Hz.
     Band is disabled (gain=1.0 = 0 dB) if prominence < 3 dB.
     Position: after de-harsher, before saturator.
     """
@@ -330,8 +331,26 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
         params["q_3"] = 0.0
         params["g_3"] = 1.0
 
-    # Bands 4-15: disabled
-    for i in range(4, 16):
+    # Clean-mediums band (band 4): Bell cut at 600 Hz, Q=1.5
+    clean_db = report.get("_clean_mediums", 0.0)
+    params["s_4"] = 0.0
+    if clean_db < -0.01:
+        params["ft_4"] = 4.0    # Bell
+        params["fm_4"] = 0.0
+        params["f_4"] = 600.0   # center of 450-750 Hz mud zone
+        params["w_4"] = 4.0     # Q≈1.5 → moderate width
+        params["q_4"] = 1.5
+        params["g_4"] = round(db_to_linear_gain(clean_db), 4)
+    else:
+        params["ft_4"] = 0.0
+        params["fm_4"] = 0.0
+        params["f_4"] = 600.0
+        params["w_4"] = 4.0
+        params["q_4"] = 0.0
+        params["g_4"] = 1.0
+
+    # Bands 5-15: disabled
+    for i in range(5, 16):
         params[f"s_{i}"] = 0.0
         params[f"ft_{i}"] = 0.0
         params[f"fm_{i}"] = 0.0

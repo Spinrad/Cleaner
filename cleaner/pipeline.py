@@ -253,7 +253,8 @@ def _print_comparison(before, after):
 
 def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600,
                  target_lufs=-14.0, ceiling=-1.1, tame_cymbals=0.0,
-                 notch_intensity=1.0, glue=0.15, air=1.5, width=0.0,
+                 notch_intensity=1.0, glue=0.15, air=1.5, clean_mediums=0.0,
+                 width=0.0,
                  bus_comp=0.0, intensity=0.5,
                  stages=None, force_native=False,
                  punchin_s=None, punchout_s=None):
@@ -302,6 +303,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         report["_width"] = width
         report["_bus_comp"] = bus_comp
         report["_intensity"] = intensity
+        report["_clean_mediums"] = clean_mediums
 
         # Re‑compute ffmpeg params now that mastering flags are set
         report = compute_ffmpeg_params(report)

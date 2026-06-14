@@ -90,6 +90,8 @@ def _parse_time(t: str) -> float:
               help="Saturation drive (0.0=off, 0.5=medium, 1.0=max).")
 @click.option("--air", type=float, default=1.5,
               help="High-shelf brilliance at 8kHz in dB [0.0, 5.0].")
+@click.option("--clean-mediums", "-cm", type=float, default=0.0,
+              help="Low-mid cleanup cut at 600Hz in dB [-6.0, 0.0]. 0=off.")
 @click.option("--width", type=float, default=0.0,
               help="Stereo width [-1.0, 1.0]. +widens, -narrows.")
 @click.option("--bus-comp", type=float, default=0.0,
@@ -112,7 +114,7 @@ def _parse_time(t: str) -> float:
 @click.version_option(version="0.1.0", prog_name="cleaner")
 def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
          notch_intensity, tame_cymbals, timeout, verbose, punchin, punchout,
-         glue, air, width, bus_comp, intensity, force_native,
+         glue, air, clean_mediums, width, bus_comp, intensity, force_native,
          expander, ducking, deharsher, notches, saturation, limiter, lufs,
          hp35, hp150):
     """CLEANER -- Restore live recordings.
@@ -154,6 +156,8 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         errors.append(f"--glue range [0,1], got {glue}")
     if not (0.0 <= air <= 5.0):
         errors.append(f"--air range [0,5], got {air}")
+    if not (-6.0 <= clean_mediums <= 0.0):
+        errors.append(f"--clean-mediums range [-6,0], got {clean_mediums}")
     if not (-1.0 <= width <= 1.0):
         errors.append(f"--width range [-1,1], got {width}")
     if not (0.0 <= bus_comp <= 1.0):
@@ -206,7 +210,8 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         dry_run=dry_run, timeout=timeout,
         target_lufs=target_lufs, ceiling=ceiling,
         tame_cymbals=tame_cymbals, notch_intensity=notch_intensity,
-        glue=glue, air=air, width=width,
+        glue=glue, air=air, clean_mediums=clean_mediums,
+        width=width,
         bus_comp=bus_comp, intensity=intensity,
         stages=stages, force_native=force_native,
         punchin_s=punchin_s, punchout_s=punchout_s,
