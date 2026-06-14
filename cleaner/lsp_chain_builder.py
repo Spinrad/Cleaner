@@ -194,12 +194,17 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
         tail += "," + _clamped_lv2_node(DEHARSHER_URI, compute_deharsher_lsp_params, report, tracker)
         tracker.commit("deharsher", -0.5, "band cut 2.5-4.5kHz")
     
-    # ── Stage: EQ notches + air (LSP) ──
-    if on("notches") or on("air"):
+    # ── Stage: EQ notches (LSP) ──
+    if on("notches"):
         tail += "," + _clamped_lv2_node(EQ_URI, compute_eq_lsp_params, report, tracker)
         notch_gain = -1.0 if on("notches") else 0.0
-        air_gain = report.get("_air", 1.5) if on("air") else 0.0
-        tracker.commit("eq", notch_gain + air_gain, "notches + air")
+        tracker.commit("eq", notch_gain, "notches")
+
+    # ── Stage: Air shelf (native treble, high-shelf at 8kHz) ──
+    air_db = report.get("_air", 1.5)
+    if on("air"):
+        tail += f",treble=frequency=8000:width_type=q:width=0.7:gain={air_db}"
+        tracker.commit("air", air_db, "high-shelf 8kHz")
     
     # ── Stage: Saturation (native asoftclip tanh) ──
     if on("saturation") and on("glue"):

@@ -259,7 +259,7 @@ def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[st
 
 
 def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP para_equalizer_x16_stereo (notches + air).
+    """Compute parameters for LSP para_equalizer_x16_stereo (notches).
     
     Uses up to 3 notch bands for room modes + 1 hi-shelf for air.
     Band is disabled (gain=1.0 = 0 dB) if prominence < 3 dB.
@@ -277,8 +277,6 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     
     mult = report.get("_notch_multiplier", 1.0)
     intensity = report.get("_intensity", 0.5)
-    air_db = report.get("_air", 1.5)
-    
     params: dict[str, float] = {
         "mode": 0.0,   # stereo mode
         "g_in": 1.0,
@@ -314,26 +312,8 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
             params[f"q_{i}"] = round(q_val, 1)
             params[f"g_{i}"] = round(db_to_linear_gain(gain_db), 4)
     
-    # Air band (band 3): hi-shelf at 8 kHz
-    air_enabled = air_db > 0.01
-    params["s_3"] = 0.0
-    if air_enabled:
-        params["ft_3"] = 7.0   # High-shelf type (6=LowShelf, 7=HighShelf)
-        params["fm_3"] = 0.0
-        params["f_3"] = 8000.0
-        params["w_3"] = 2.8    # Q≈0.7 mapped to width
-        params["q_3"] = 0.7
-        params["g_3"] = round(db_to_linear_gain(air_db), 4)
-    else:
-        params["ft_3"] = 0.0
-        params["fm_3"] = 0.0
-        params["f_3"] = 8000.0
-        params["w_3"] = 4.0
-        params["q_3"] = 0.0
-        params["g_3"] = 1.0
-    
-    # Remaining bands (4-15): disabled
-    for i in range(4, 16):
+    # Bands 3-15: disabled (air shelf is handled natively via treble)
+    for i in range(3, 16):
         params[f"s_{i}"] = 0.0
         params[f"ft_{i}"] = 0.0
         params[f"fm_{i}"] = 0.0
