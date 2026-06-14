@@ -41,6 +41,24 @@ PRESETS: dict = {
     },
 }
 
+def _parse_time(t: str) -> float:
+    """Parse a time string in mm:ss or m:ss format to seconds."""
+    t = t.strip()
+    if ":" not in t:
+        raise ValueError(f"Invalid time format: '{t}'. Use mm:ss (e.g. 1:30).")
+    parts = t.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid time format: '{t}'. Use mm:ss.")
+    try:
+        minutes = int(parts[0])
+        seconds = float(parts[1])
+    except ValueError:
+        raise ValueError(f"Invalid time: '{t}'. Minutes and seconds must be numbers.")
+    if seconds >= 60:
+        raise ValueError(f"Seconds must be < 60: '{t}'.")
+    return minutes * 60 + seconds
+
+
 @click.command()
 @click.argument("source", type=click.Path(exists=True, path_type=Path))
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None,
@@ -61,6 +79,10 @@ PRESETS: dict = {
               help="Render timeout seconds.")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Verbose logging.")
+@click.option("--punchin", "-pi", type=str, default=None,
+              help="Trim start (mm:ss, e.g. 00:30).")
+@click.option("--punchout", "-po", type=str, default=None,
+              help="Trim end (mm:ss, e.g. 1:12).")
 @click.option("--preset", type=click.Choice(list(PRESETS.keys()), case_sensitive=False),
               default=None, help="Mastering preset. Overrides color defaults.")
 # Mastering color (floats -- preset-aware)
@@ -89,7 +111,7 @@ PRESETS: dict = {
 @click.option("--hp150/--no-hp150", default=True, help="150Hz Side high-pass.")
 @click.version_option(version="0.1.0", prog_name="cleaner")
 def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
-         notch_intensity, tame_cymbals, timeout, verbose,
+         notch_intensity, tame_cymbals, timeout, verbose, punchin, punchout,
          glue, air, width, bus_comp, intensity, force_native,
          expander, ducking, deharsher, notches, saturation, limiter, lufs,
          hp35, hp150):
@@ -142,6 +164,15 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         for e in errors: click.echo(f"  Error: {e}", err=True)
         sys.exit(1)
 
+    # Parse punch-in/out times
+    punchin_s = _parse_time(punchin) if punchin else None
+    punchout_s = _parse_time(punchout) if punchout else None
+    if punchin_s is not None and punchout_s is not None and punchin_s >= punchout_s:
+        errors.append(f"--punchin ({punchin}) must be before --punchout ({punchout})")
+    if errors:
+        for e in errors: click.echo(f"  Error: {e}", err=True)
+        sys.exit(1)
+
     # -- Apply preset ----
     if preset:
         p = PRESETS[preset]
@@ -178,5 +209,6 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         glue=glue, air=air, width=width,
         bus_comp=bus_comp, intensity=intensity,
         stages=stages, force_native=force_native,
+        punchin_s=punchin_s, punchout_s=punchout_s,
     )
     if not result.success: sys.exit(1)

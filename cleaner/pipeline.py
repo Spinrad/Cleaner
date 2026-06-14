@@ -255,7 +255,8 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                  target_lufs=-14.0, ceiling=-1.1, tame_cymbals=0.0,
                  notch_intensity=1.0, glue=0.15, air=1.5, width=0.0,
                  bus_comp=0.0, intensity=0.5,
-                 stages=None, force_native=False):
+                 stages=None, force_native=False,
+                 punchin_s=None, punchout_s=None):
     if stages is None:
         stages = {}
     result = PipelineResult()
@@ -280,7 +281,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         # 1. Convert
         click.echo("  [1/5] Conversion...")
         input_wav = temp_dir / "input.wav"
-        convert_to_wav(source, input_wav)
+        convert_to_wav(source, input_wav, start_s=punchin_s, end_s=punchout_s)
         result.input_metrics = _measure_file(input_wav)
 
         # 2. Analyse

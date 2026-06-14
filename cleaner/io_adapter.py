@@ -70,6 +70,8 @@ def convert_to_wav(
     sample_rate: int = TARGET_SAMPLE_RATE,
     bit_depth: str = TARGET_BIT_DEPTH,
     overwrite: bool = True,
+    start_s: float | None = None,
+    end_s: float | None = None,
 ) -> Path:
     """
     Convert any audio source to a temporary WAV file via ffmpeg.
@@ -100,15 +102,14 @@ def convert_to_wav(
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output_path}")
 
-    cmd = [
-        str(ffmpeg_path),
-        "-y" if overwrite else "-n",
-        "-i", str(source_path),
-        "-acodec", bit_depth,
-        "-ar", str(sample_rate),
-        "-ac", "2",
-        str(output_path),
-    ]
+    # Build ffmpeg command with optional trim
+    cmd = [str(ffmpeg_path), "-y" if overwrite else "-n"]
+    if start_s is not None:
+        cmd += ["-ss", str(start_s)]
+    cmd += ["-i", str(source_path)]
+    if end_s is not None:
+        cmd += ["-to", str(end_s)]
+    cmd += ["-acodec", bit_depth, "-ar", str(sample_rate), "-ac", "2", str(output_path)]
 
     logger.info("Converting source to WAV: %s → %s", source_path.name, output_path.name)
     logger.debug("Command: %s", " ".join(cmd))

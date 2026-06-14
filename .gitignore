@@ -27,3 +27,7 @@ setup-opencode-agent.sh
 # OS
 .DS_Store
 Thumbs.db
+
+# Test audio files (user-provided, not part of repo)
+tests/*.m4a
+tests/*.wav
