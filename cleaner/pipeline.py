@@ -190,7 +190,7 @@ def _print_chain_summary(report, stages, use_lsp=False):
     else:
         _box_line(f"   Saturation DESACTIVEE", "cyan")
     if stages.get("air", False):
-        _box_line(f"   Air boost: +{report.get('_air_db', 1.5):.1f} dB @ 8kHz", "cyan")
+        _box_line(f"   Air: {report.get('_air_db', 1.5):+.1f} dB @ 10kHz", "cyan")
     if stages.get("width", False):
         w = report.get("_width", 0.0)
         _box_line(f"   Width: {w:+.1f} ({'elargi' if w > 0 else 'resserre' if w < 0 else 'neutre'})", "cyan")

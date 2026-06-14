@@ -314,14 +314,15 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
             params[f"q_{i}"] = round(q_val, 1)
             params[f"g_{i}"] = round(db_to_linear_gain(gain_db), 4)
     
-    # Air band (band 3): Bell boost at 10 kHz for vocal clarity
+    # Air band (band 3): Bell at 10 kHz, Q=2.0
     params["s_3"] = 0.0
-    if air_db > 0.01:
-        params["ft_3"] = 4.0   # Bell (proven correct for notches)
+    if abs(air_db) > 0.01:
+        q_air = 2.0
+        params["ft_3"] = 4.0   # Bell
         params["fm_3"] = 0.0
-        params["f_3"] = 10000.0  # 10 kHz — targets vocal air, above sibilance
-        params["w_3"] = 2.8     # Q≈0.7 → moderate width
-        params["q_3"] = 0.7
+        params["f_3"] = 10000.0
+        params["w_3"] = round(q_air / 2.5, 1)   # same formula as notches → 0.8
+        params["q_3"] = q_air
         params["g_3"] = round(db_to_linear_gain(air_db), 4)
     else:
         params["ft_3"] = 0.0

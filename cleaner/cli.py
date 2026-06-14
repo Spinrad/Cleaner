@@ -89,7 +89,7 @@ def _parse_time(t: str) -> float:
 @click.option("--glue", type=float, default=0.15,
               help="Saturation drive (0.0=off, 0.5=medium, 1.0=max).")
 @click.option("--air", type=float, default=1.5,
-              help="High-shelf brilliance at 8kHz in dB [0.0, 5.0].")
+              help="Bell boost/cut at 10kHz in dB [-5.0, 5.0].")
 @click.option("--clean-mediums", "-cm", type=float, default=0.0,
               help="Low-mid cleanup cut at 600Hz in dB [-6.0, 0.0]. 0=off.")
 @click.option("--width", type=float, default=0.0,
@@ -154,8 +154,8 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         errors.append(f"--ceiling range [-3,-0.3], got {ceiling}")
     if not (0.0 <= glue <= 1.0):
         errors.append(f"--glue range [0,1], got {glue}")
-    if not (0.0 <= air <= 5.0):
-        errors.append(f"--air range [0,5], got {air}")
+    if not (-5.0 <= air <= 5.0):
+        errors.append(f"--air range [-5,5], got {air}")
     if not (-6.0 <= clean_mediums <= 0.0):
         errors.append(f"--clean-mediums range [-6,0], got {clean_mediums}")
     if not (-1.0 <= width <= 1.0):
