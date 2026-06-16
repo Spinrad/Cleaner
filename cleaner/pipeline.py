@@ -7,7 +7,8 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 import click
-from cleaner.analysis.global_analysis import get_global_analysis, compute_ffmpeg_params, AnalysisReport
+from cleaner.analysis.global_analysis import get_global_analysis, AnalysisReport
+from cleaner.analysis.derived import compute_derived_params
 from cleaner.ffmpeg_chain import build_filtergraph
 from cleaner.lsp_chain_builder import build_lsp_filtergraph
 from cleaner.io_adapter import (convert_to_wav, measure_lufs, apply_lufs_gain,
@@ -290,10 +291,10 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
 
         # 2. Analyse
         click.echo("  [2/5] Analyse (Phase 1)...")
-        report = get_global_analysis(str(input_wav))
-        result.report = report
-        _print_analysis_report(report)
-
+        analysis = get_global_analysis(str(input_wav))
+        result.report = analysis
+        _print_analysis_report(analysis.to_dict())
+        
         # 3. Settings + params
         settings = MasteringSettings(
             glue=glue, air=air, width=width, bus_comp=bus_comp,
@@ -301,7 +302,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
             notch_multiplier=notch_intensity, tame_cymbals=tame_cymbals,
             clean_mediums=clean_mediums,
         )
-        report = copy.deepcopy(report)
+        report = copy.deepcopy(analysis.to_dict())
         # Inject settings into report for downstream readers (backward compat).
         # Future: readers should accept MasteringSettings directly.
         report["_ceiling_db"] = settings.ceiling_db
@@ -315,8 +316,39 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         report["_intensity"] = settings.intensity
         report["_clean_mediums"] = settings.clean_mediums
 
-        # Re‑compute ffmpeg params now that mastering flags are set
-        report = compute_ffmpeg_params(report)
+        # Compute all DSP params once — new typed path
+        derived = compute_derived_params(analysis, settings)
+        # Backward compat: inject derived values into report dict for legacy builders
+        report.update({k: v for k, v in derived.__dict__.items() if not k.startswith('_')})
+        report["expander_threshold_linear"] = derived.expander_threshold_linear
+        report["expander_ratio"] = derived.expander_ratio
+        report["expander_range_linear"] = derived.expander_range_linear
+        report["expander_attack_ms"] = derived.expander_attack_ms
+        report["expander_release_ms"] = derived.expander_release_ms
+        report["comp_threshold_linear"] = derived.comp_threshold_linear
+        report["comp_ratio"] = derived.comp_ratio
+        report["comp_attack_ms"] = derived.comp_attack_ms
+        report["comp_release_ms"] = derived.comp_release_ms
+        report["sat_drive_db"] = derived.sat_drive_db
+        report["sat_makeup_db"] = derived.sat_makeup_db
+        report["sat_threshold_linear"] = derived.sat_threshold_linear
+        report["sat_glue"] = derived.sat_glue
+        report["_air_db"] = derived.air_db
+        report["bus_threshold_linear"] = derived.bus_threshold_linear
+        report["bus_mix"] = derived.bus_mix
+        report["bus_ratio"] = derived.bus_ratio
+        report["bus_attack_ms"] = derived.bus_attack_ms
+        report["bus_release_ms"] = derived.bus_release_ms
+        report["limiter_ceiling_linear"] = derived.limiter_ceiling_linear
+        report["deharsher_threshold_linear"] = derived.deharsher_threshold_linear
+        report["deharsher_filter_ratio"] = derived.deharsher_filter_ratio
+        report["deharsher_attack_ms"] = derived.deharsher_attack_ms
+        report["deharsher_release_ms"] = derived.deharsher_release_ms
+        report["deharsher_display_threshold"] = derived.deharsher_display_threshold
+        for j in 1, 2, 3:
+            report[f"notch_freq_{j}"] = getattr(derived, f"notch_freq_{j}")
+            report[f"notch_q_{j}"] = getattr(derived, f"notch_q_{j}")
+            report[f"notch_gain_{j}"] = getattr(derived, f"notch_gain_{j}")
 
         # 4. Filtergraph
         click.echo("  [3/5] Construction de la chaine DSP...")

@@ -30,16 +30,17 @@ from cleaner.constants import (
 )
 
 logger = logging.getLogger(__name__)
-AnalysisReport = dict[str, Any]
 
-# Shared musical constants — single source of truth for both builders.
-SAT_DRIVE_MULTIPLIER = 12.0  # drive = eff_glue * SAT_DRIVE_MULTIPLIER (0→0, 1→+12 dB)
-SAT_MAKEUP_RATIO = 0.4       # makeup = -drive * SAT_MAKEUP_RATIO
+# Backward compat alias — being phased out in favor of cleaner.types.AnalysisReport.
+from cleaner.types import AnalysisReport as _AnalysisReportDataclass
+AnalysisReport = _AnalysisReportDataclass  # type alias, not the dict anymore
 
 
 def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
+    # Convert to mutable dict for legacy mutation (being phased out).
+    report = report.to_dict() if hasattr(report, 'to_dict') else dict(report)
     crest = report.get("crest_factor_db", 12.0)
-    rms = report.get("rms_db", -18.0)
+    rms = report.get("rms_db", -15.0)
     attack_ms = report.get("transient_attack_ms", 10.0)
     agc_rec = report.get("agc_recovery_ms", 80.0)
 
@@ -109,7 +110,7 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     report["sat_softclip_type"] = 0
 
     # --- Mastering air & width ---
-    report["_air_db"] = report.get("_air", 1.5)
+    report["_air_db"] = report.get("_air", 0.0)
     report["_width"] = report.get("_width", 0.0)
 
     # --- Bus compressor (SSL-style glue) ---
@@ -161,7 +162,7 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
 
 def get_global_analysis(source_path: str) -> AnalysisReport:
     logger.info("=== Phase 1 ===")
-    report: AnalysisReport = {}
+    data: dict[str, Any] = {}
     failures = []
 
     for name, func, fb in [
@@ -182,22 +183,28 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
         }),
     ]:
         try:
-            report.update(func(source_path))
+            data.update(func(source_path))
             logger.info("[OK] %s", name)
         except Exception as exc:
             failures.append(f"{name}: {exc}")
             logger.warning("[FAIL] %s: %s", name, exc)
             for k, v in fb.items():
-                report.setdefault(k, v)
+                data.setdefault(k, v)
 
     if len(failures) >= 4:
         raise ValueError("All 4 modules failed.\n" + "\n".join(failures))
-    report.setdefault("duration_s", 0.0)
-    report.setdefault("sample_rate", 48000)
-    if failures: report["_analysis_warnings"] = failures
+    data.setdefault("duration_s", 0.0)
+    data.setdefault("sample_rate", 48000)
+    if failures:
+        data["_analysis_warnings"] = failures
+
     gc.collect()
-    logger.info("=== Phase 1 Complete: %d keys ===", len(report))
-    return report
+    # Build dataclass from explicit keys
+    known_fields = {f.name for f in AnalysisReport.__dataclass_fields__.values()}
+    filtered = {k: v for k, v in data.items() if k in known_fields}
+    result = AnalysisReport(**filtered)
+    logger.info("=== Phase 1 Complete: %d keys ===", len(filtered))
+    return result
 
 
 def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]:
@@ -304,7 +311,7 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     
     mult = report.get("_notch_multiplier", 1.0)
     intensity = report.get("_intensity", 0.5)
-    air_db = report.get("_air", 1.5)
+    air_db = report.get("_air", 0.0)
     params: dict[str, float] = {
         "mode": 0.0,   # stereo mode
         "g_in": 1.0,

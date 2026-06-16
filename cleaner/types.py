@@ -61,6 +61,12 @@ class AnalysisReport:
         """For backward compat with code that still expects a dict."""
         return {f.name: getattr(self, f.name) for f in self.__dataclass_fields__.values()}
 
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
 
 @dataclass
 class MasteringSettings:
@@ -127,6 +133,10 @@ class DerivedParams:
 
     # Limiter
     limiter_ceiling_linear: float = 0.88
+    limiter_lk: float = 0.1
+    limiter_at: float = 0.25
+    limiter_rt: float = 0.25
+    limiter_ovs: float = 4.0
 
     # De-harsher (native only)
     deharsher_threshold_linear: float = 10.0
