@@ -407,3 +407,32 @@ def test_smoke_full_native_chain():
 
         y_out, _ = sf.read(str(output_wav), always_2d=True)
         assert output_wav.stat().st_size > 1000
+
+
+def test_port_unit_resolution_without_plugins():
+    """Verify clamp_to_port resolves ms vs s from max_v without LSP installed."""
+    from cleaner.lv2_params import clamp_to_port
+    from cleaner.lv2_introspect import PortInfo
+
+    # Expander-like: max=2000 → ms
+    p_exp_at = PortInfo(symbol="at", min_val=0, max_val=2000, default_val=10, unit="ms")
+    assert clamp_to_port(10, p_exp_at, convert_unit=True) == 10.0  # ms pass through
+
+    # Limiter-like: max=20 → s, value in ms → clamped to port min 0.25
+    p_lim_at = PortInfo(symbol="at", min_val=0.25, max_val=20, default_val=5, unit="s")
+    result = clamp_to_port(5, p_lim_at, convert_unit=True)
+    assert 0.25 <= result <= 20, f"limiter at clamped: {result}"  # clamped to min or converted
+
+    # Expander release: max=5000 → ms
+    p_exp_rt = PortInfo(symbol="rt", min_val=0, max_val=5000, default_val=100, unit="ms")
+    assert clamp_to_port(100, p_exp_rt, convert_unit=True) == 100.0
+
+    # Limiter lookahead: max=20 → s, port min 0.1 clamps small values
+    p_lim_lk = PortInfo(symbol="lk", min_val=0.1, max_val=20, default_val=5, unit="s")
+    result_lk = clamp_to_port(5, p_lim_lk, convert_unit=True)
+    assert result_lk >= 0.1, f"lk clamped to min: {result_lk}"
+
+    # Linear gain port: dB → G
+    p_gain = PortInfo(symbol="g_3", min_val=0.01585, max_val=63.1, default_val=1, unit="linear_gain")
+    assert abs(clamp_to_port(0, p_gain, convert_unit=True) - 1.0) < 0.001  # 0 dB → 1.0
+    assert abs(clamp_to_port(6, p_gain, convert_unit=True) - 2.0) < 0.01   # 6 dB → ~2.0

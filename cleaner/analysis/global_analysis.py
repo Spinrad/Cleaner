@@ -319,8 +319,8 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
             gain_db = max(gain_db, -12.0)
             
             params[f"s_{i}"] = 0.0  # not soloed
-            params[f"ft_{i}"] = 4.0  # Bell filter type
-            params[f"fm_{i}"] = 0.0  # default filter mode
+            params[f"ft_{i}"] = 1.0  # Bell (parametric cut)
+            params[f"fm_{i}"] = 0.0  # RLC (BT)
             params[f"f_{i}"] = round(f0, 1)
             params[f"w_{i}"] = round(q_val / 2.5, 1)  # Q to width mapping
             params[f"q_{i}"] = round(q_val, 1)
@@ -330,7 +330,7 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     params["s_3"] = 0.0
     if abs(air_db) > 0.01:
         q_air = 2.0
-        params["ft_3"] = 4.0   # Bell
+        params["ft_3"] = 1.0   # Bell
         params["fm_3"] = 0.0
         params["f_3"] = 10000.0
         params["w_3"] = round(q_air / 2.5, 1)   # same formula as notches → 0.8
@@ -348,7 +348,7 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     clean_db = report.get("_clean_mediums", 0.0)
     params["s_4"] = 0.0
     if clean_db < -0.01:
-        params["ft_4"] = 4.0    # Bell
+        params["ft_4"] = 1.0    # Bell
         params["fm_4"] = 0.0
         params["f_4"] = 600.0   # center of 450-750 Hz mud zone
         params["w_4"] = 4.0     # Q≈1.5 → moderate width
@@ -429,9 +429,9 @@ def compute_limiter_lsp_params(report: AnalysisReport, tracker=None) -> dict[str
         "th": round(th_val, 4),
         "knee": 1.0,    # soft knee
         "boost": 1.0,   # boost enabled
-        "lk": 5.0,      # 5 ms lookahead
-        "at": 5.0,      # 5 ms attack
-        "rt": 5.0,      # 5 ms release
+        "lk": 0.1,      # 100 ms lookahead (port minimum, unit=s)
+        "at": 0.25,     # 250 ms attack (port minimum, unit=s)
+        "rt": 0.25,     # 250 ms release (port minimum, unit=s)
         "ovs": 4.0,     # 4x oversampling
         "alr": 1.0,     # adaptive release enabled
         "g_in": 1.0,

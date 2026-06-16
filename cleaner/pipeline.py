@@ -121,10 +121,10 @@ def _print_chain_summary(report, stages, use_lsp=False):
     """Human-readable filterchain summary."""
     _box_header("CHAINE DSP APPLIQUEE")
     i = 0
-    if stages.get("expander", True):
+    if stages.get("expander", False):
         i += 1
         if use_lsp:
-            _box_line(f"{i}. HP 35Hz + Expander LSP (anti-AGC)", "cyan")
+            _box_line(f"{i}. HP 35Hz + Expander LSP (gentle relief)", "cyan")
             _box_line(f"   mode=Up  ratio={report.get('expander_ratio',2):.1f}  "
                       f"attack={report.get('expander_attack_ms',5):.0f}ms  "
                       f"release={report.get('expander_release_ms',40):.0f}ms", "cyan")
@@ -300,7 +300,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         report["_notch_multiplier"] = notch_intensity
         report["_tame_cymbals"] = tame_cymbals
         report["_glue"] = glue
-        report["_air"] = -air
+        report["_air"] = air
         report["_width"] = width
         report["_bus_comp"] = bus_comp
         report["_intensity"] = intensity

@@ -31,11 +31,11 @@ def test_no_expander_disables():
     finally: os.unlink(tmp)
 
 
-def test_default_keeps_expander():
+def test_default_expander_off():
     tmp = _make_dummy_wav()
     try:
         r = CliRunner().invoke(main, [tmp, "--dry-run"])
-        assert "Expander DESACTIVE" not in r.output
+        assert "Expander DESACTIVE" in r.output
     finally: os.unlink(tmp)
 
 

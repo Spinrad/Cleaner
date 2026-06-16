@@ -10,7 +10,7 @@ pass:
 
 - **Structural stages** (resample, HP, M/S encode/decode, sidechain ducking,
   LUFS measurement, post-limiter) use **native ffmpeg filters**.
-- **Coloration stages** (expander anti-AGC, notches EQ, air shelf, de-harsher,
+- **Coloration stages** (expander gentle relief, notches EQ, air shelf, de-harsher,
   bus compressor, musical limiter) use **LSP plugins via LV2**.
   Saturation is **native ffmpeg** (`asoftclip=type=tanh`).,
   loaded through ffmpeg's native `lv2` filter.
@@ -51,7 +51,7 @@ Enabled by default except where noted.
 | # | Stage | Engine | Toggle flag |
 |---|-------|--------|-------------|
 | 1 | HP 35 Hz | `highpass` (Butterworth, order 2) [NATIF] | `--hp35` / `--no-hp35` |
-| 2 | Expander (anti-AGC) | `expander_stereo` (LSP, Mode=Up) [LSP] | `--expander` / `--no-expander` |
+| 2 | Expander (gentle relief) | `expander_stereo` (LSP, Mode=Up) [LSP] | `--expander` / `--no-expander` (default OFF) |
 | 3 | M/S encode | `stereotools=mode=lr>ms` [NATIF] | (structural — always on) |
 | 4 | Sidechain ducking | `channelsplit` → HP 150 Hz Side → `sidechaincompress` (Mid→Side) → `amerge` [NATIF] | `--ducking` / `--no-ducking` |
 | 5 | M/S decode | `stereotools=mode=ms>lr` [NATIF] | (structural — always on) |
@@ -91,7 +91,7 @@ See `cleaner --help` for the full list. Key flags:
 | Flag | Range | Default | Description |
 |------|-------|---------|-------------|
 | `--glue FLOAT` | 0-1 | 0.15 | Saturation drive (0 = off, 1 = max) |
-| `--air FLOAT` | -5 to 5 | 1.5 | Bell at 10 kHz (positive = darker, negative = brighter) |
+| `--air FLOAT` | -5 to 5 | 0.0 | Bell at 10 kHz (+=brighter, -=darker) |
 | `--width FLOAT` | -1 to 1 | 0.0 | Stereo width (+widens, -narrows) |
 | `--bus-comp FLOAT` | 0-1 | 0.0 | SSL bus compressor drive (parallel) |
 | `--intensity FLOAT` | 0-1 | 0.5 | Global intensity (scales expander ratio, notch depth, saturator drive) |
@@ -170,9 +170,9 @@ pytest tests/ -v
   driven into its non-linear zone by `--glue` (0→0 dB drive, 1→+16 dB drive)
   and compensated with automatic makeup gain. At default settings
   (`glue=0.15`), the effect is subtle but measurable (+52% H3 at -1 dBFS).
-- **LUFS gain is clamped to [-3, +6] dB.** If the processed file is very
-  quiet or very loud relative to the target, the target may not be reached.
-  The output always reports the actual value achieved.
+- **LUFS gain is clamped to [-6, +14] dB.** Gains above +6 dB are possible
+  but will be followed by the re‑limiter, compressing dynamics. The output
+  always reports the actual LUFS achieved.
 - **De-harsher is experimental and disabled by default.** Enable with
   `--deharsher`. It uses `sc_compressor_stereo` with internal sidechain
   bandpass (2.5-4.5 kHz).

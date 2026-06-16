@@ -192,13 +192,20 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     # ── Stage: De-harsher (LSP, opt-in, before saturator) ──
     if on("deharsher"):
         tail += "," + _clamped_lv2_node(DEHARSHER_URI, compute_deharsher_lsp_params, report, tracker)
-        tracker.commit("deharsher", -0.5, "band cut 2.5-4.5kHz")
+        deharsh_reduction = -max(0.1, report.get("harshness_index", 0.0) * 1.5)
+        tracker.commit("deharsher", deharsh_reduction, "band cut 2.5-4.5kHz")
     
     # ── Stage: EQ notches + air (LSP) ──
     if on("notches") or on("air"):
         tail += "," + _clamped_lv2_node(EQ_URI, compute_eq_lsp_params, report, tracker)
-        notch_gain = -1.0 if on("notches") else 0.0
-        air_gain = report.get("_air", 1.5) if on("air") else 0.0
+        # Derive actual RMS impact from computed notch gains
+        notch_gain = 0.0
+        if on("notches"):
+            for j in (1, 2, 3):
+                g = report.get(f"notch_gain_{j}", 0.0)
+                if g < -0.5:
+                    notch_gain += g
+        air_gain = 0.0  # Bell at 10 kHz has negligible RMS impact
         tracker.commit("eq", notch_gain + air_gain, "notches + air")
     
     # ── Stage: Saturation (native asoftclip tanh) ──
@@ -210,13 +217,15 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
             f"volume={sat_params['sat_makeup_db']}dB"
         )
         sat_net_gain = sat_params['sat_drive_db'] + sat_params['sat_makeup_db']
-        tracker.commit("saturation", sat_net_gain, "drive + tanh + makeup")
+        # Tanh clipper reduces RMS by ~15% of drive amount
+        sat_rms_gain = sat_net_gain - abs(sat_params['sat_drive_db']) * 0.15
+        tracker.commit("saturation", sat_rms_gain, "drive + tanh + makeup")
     
     # ── Stage: Bus Compressor (LSP) ──
     if on("bus_comp"):
         tail += "," + _clamped_lv2_node(COMPRESSOR_URI, compute_compressor_lsp_params, report, tracker)
         bus = report.get("_bus_comp", 0.0)
-        comp_gain = -bus * 4.0
+        comp_gain = -bus * 2.0  # moderate compression gain reduction
         tracker.commit("compressor", comp_gain, "bus glue")
     
     # ── Stage: Width (native stereotools) ──

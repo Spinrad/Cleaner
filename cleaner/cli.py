@@ -89,8 +89,8 @@ def _parse_time(t: str) -> float:
 # Mastering color (floats -- preset-aware)
 @click.option("--glue", type=float, default=0.15,
               help="Saturation drive (0.0=off, 0.5=medium, 1.0=max).")
-@click.option("--air", type=float, default=1.5,
-              help="Bell boost/cut at 10kHz in dB [-5.0, 5.0].")
+@click.option("--air", type=float, default=0.0,
+              help="Bell boost/cut at 10kHz in dB [-5.0, 5.0]. 0=neutral, positive=brighter.")
 @click.option("--clean-mediums", "-cm", type=float, default=0.0,
               help="Low-mid cleanup cut at 600Hz in dB [-6.0, 0.0]. 0=off.")
 @click.option("--width", type=float, default=0.0,
@@ -103,7 +103,7 @@ def _parse_time(t: str) -> float:
               help="Use full-native ffmpeg chain (no LSP/LV2 plugins).")
 
 # Stage toggles (booleans)
-@click.option("--expander/--no-expander", default=True, help="Anti-AGC upward expansion.")
+@click.option("--expander/--no-expander", default=False, help="Gentle upward expansion (off by default).")
 @click.option("--ducking/--no-ducking", default=True, help="Mid->Side room ducking.")
 @click.option("--deharsher/--no-deharsher", default=False, help="Dynamic de-harsher (experimental).")
 @click.option("--notches/--no-notches", default=True, help="Room mode notch filters.")

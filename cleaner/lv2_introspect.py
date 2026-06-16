@@ -125,7 +125,7 @@ def _infer_unit(symbol: str, desc: str, min_v: float, max_v: float, default_v: f
     return ""
 
 
-def _parse_ffmpeg_lv2_help(stderr: str) -> dict[str, PortInfo]:
+def _parse_ffmpeg_lv2_help(stderr: str, plugin_slug: str = "") -> dict[str, PortInfo]:
     ports: dict[str, PortInfo] = {}
     pattern = re.compile(
         r"\]\s+(\S+)\s+<float>\s+\(from\s+([\d.\-e]+)\s+to\s+([\d.\-e]+)\)\s+"
@@ -140,11 +140,20 @@ def _parse_ffmpeg_lv2_help(stderr: str) -> dict[str, PortInfo]:
             min_v, max_v, def_v = float(min_s), float(max_s), float(def_s)
         except ValueError:
             continue
-        from cleaner.lv2_params import EXPLICIT_UNITS
-        if symbol in EXPLICIT_UNITS:
+        from cleaner.lv2_params import EXPLICIT_UNITS, get_plugin_unit
+        # Priority 1: per-plugin unit table (authority from CDC §4.4)
+        unit = ""
+        if plugin_slug:
+            unit = get_plugin_unit(plugin_slug, symbol)
+        # Priority 2: global EXPLICIT_UNITS (non-ambiguous symbols)
+        if not unit and symbol in EXPLICIT_UNITS:
             unit = EXPLICIT_UNITS[symbol]
-        else:
+        # Priority 3: heuristic inference from range + description
+        if not unit:
             unit = _infer_unit(symbol, desc, min_v, max_v, def_v)
+            if symbol in ("at", "rt", "lk", "al", "g_in", "g_out", "kn", "mk", "th", "cdr", "cwt", "knee", "boost", "scp", "er", "cr", "mode", "scm", "cm", "em", "sct", "ovs", "alr", "sla", "ft_", "fm_", "s_", "f_", "w_", "g_", "q_"):
+                if any(symbol.startswith(p) for p in ("at", "rt", "lk", "sla", "alr", "al", "g_", "g_in", "g_out", "kn", "mk", "th", "cdr", "cwt", "knee", "boost", "scp")):
+                    logger.warning("_infer_unit used for pilot port '%s' in %s — add to PLUGIN_UNITS if this is wrong", symbol, plugin_slug)
         ports[symbol] = PortInfo(
             symbol=symbol, name=desc,
             min_val=min_v, max_val=max_v, default_val=def_v,
@@ -163,7 +172,8 @@ def introspect_plugin(uri: str) -> PluginInfo:
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        ports = _parse_ffmpeg_lv2_help(result.stderr)
+        plugin_slug = uri.rsplit("/", 1)[-1] if "/" in uri else ""
+        ports = _parse_ffmpeg_lv2_help(result.stderr, plugin_slug)
         logger.info("Introspected %s: %d ports", uri, len(ports))
         return PluginInfo(uri=uri, ports=ports)
     except FileNotFoundError:

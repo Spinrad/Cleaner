@@ -114,6 +114,37 @@ EXPLICIT_UNITS: dict[str, str] = {
 # checking max_v > 20 → "ms", else "s".
 
 
+# ── Per-plugin unit table ─────────────────────────────────────────────
+# Source of truth for port units, confirmed by introspection against
+# LSP 1.2.12 (see CDC §4.4). Key is (plugin_slug, symbol).
+# Consumed by lv2_introspect._parse_ffmpeg_lv2_help for every port we pilot.
+
+PLUGIN_UNITS: dict[tuple[str, str], str] = {
+    # Expander stereo — all time ports in milliseconds
+    ("expander_stereo", "at"): "ms",
+    ("expander_stereo", "rt"): "ms",
+    ("expander_stereo", "sla"): "s",
+
+    # Compressor stereo — all time ports in milliseconds
+    ("compressor_stereo", "at"): "ms",
+    ("compressor_stereo", "rt"): "ms",
+    ("compressor_stereo", "sla"): "s",
+
+    # Limiter stereo — all time ports in seconds (range 0-20)
+    ("limiter_stereo", "at"): "s",
+    ("limiter_stereo", "rt"): "s",
+    ("limiter_stereo", "lk"): "s",
+
+    # SC compressor stereo (de-harsher) — time ports in milliseconds
+    ("sc_compressor_stereo", "at"): "ms",
+    ("sc_compressor_stereo", "rt"): "ms",
+}
+
+
+def get_plugin_unit(plugin_slug: str, symbol: str) -> str | None:
+    return PLUGIN_UNITS.get((plugin_slug, symbol))
+
+
 def get_port_unit(symbol: str, fallback_infer_fn=None) -> str:
     """Get the confirmed unit for a port symbol.
 
