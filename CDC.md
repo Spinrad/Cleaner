@@ -62,7 +62,7 @@ lv2ls | grep lsp                    # doit lister les plugins LSP
 │
 ├─ 6. [LSP] Parametric EQ              para_equalizer_x16_stereo
 │      Par mode : 1 bande Bell/Notch (freq, Q, gain)
-│      + 1 bande hi‑shelf pour l'air
+│      + 1 bande Bell pour l'air
 │      Mode Stereo (pas MidSide)
 │
 ├─ 7. [NATIF] Saturator                 asoftclip=type=tanh
@@ -239,7 +239,8 @@ la quantité d'expansion est pilotée par le Ratio.
   - **Gain** ← −(proéminence × 0.5), clampé [−9, −2] dB.
     Si proéminence < 3 dB → bande désactivée (gain = 0 dB).
   - **Type** = Bell (ou Notch selon disponibilité LSP)
-- **Air shelf** : hi‑shelf à 8 kHz, gain = `--air`, Q = 0.7.
+- **Air shelf** : Bell à 10 kHz, gain = `−(--air)` (signe inversé en interne),
+  Q = 2.0. Négatif = plus brillant, positif = plus sombre.
   **Position :** dans le même nœud EQ (avant saturation).
   Alternative : nœud séparé post‑saturation via `--air-post-sat`
   (réservé v4.1).

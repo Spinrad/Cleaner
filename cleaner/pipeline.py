@@ -299,7 +299,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         report["_notch_multiplier"] = notch_intensity
         report["_tame_cymbals"] = tame_cymbals
         report["_glue"] = glue
-        report["_air"] = air
+        report["_air"] = -air
         report["_width"] = width
         report["_bus_comp"] = bus_comp
         report["_intensity"] = intensity

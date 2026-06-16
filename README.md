@@ -58,7 +58,7 @@ Enabled by default except where noted.
 | 6 | De-harsher | `sc_compressor_stereo` (LSP, bandpass 2.5-4.5 kHz) [LSP] | `--deharsher` / `--no-deharsher` (default OFF) |
 | 7 | Room-mode notches (x3) | `para_equalizer_x16_stereo` (LSP, Bell type) [LSP] | `--notches` / `--no-notches` |
 | 8 | Saturation | `asoftclip=type=tanh` (native, drive + makeup, 4x oversample) [NATIF] | `--saturation` / `--no-saturation` |
-| 9 | Air shelf | `para_equalizer_x16_stereo` (LSP, hi-shelf 8 kHz, same EQ node) [LSP] | `--air` / (value ≤ 0.01 → off) |
+| 9 | Air shelf | `para_equalizer_x16_stereo` (LSP, Bell 10 kHz, same EQ node) [LSP] | `--air` / (abs ≤ 0.01 → off) |
 | 10 | Stereo width | `stereotools=mode=lr>lr` (base spread) [NATIF] | `--width` / (abs ≤ 0.001 → off) |
 | 11 | Bus compressor | `compressor_stereo` (LSP, SSL-style, parallel) [LSP] | `--bus-comp` / (value ≤ 0.01 → off) |
 | 12 | Limiter | `limiter_stereo` (LSP, true-peak, oversampling, ALR) [LSP] | `--limiter` / `--no-limiter` |
@@ -91,7 +91,7 @@ See `cleaner --help` for the full list. Key flags:
 | Flag | Range | Default | Description |
 |------|-------|---------|-------------|
 | `--glue FLOAT` | 0-1 | 0.15 | Saturation drive (0 = off, 1 = max) |
-| `--air FLOAT` | 0-5 dB | 1.5 | High-shelf boost at 8 kHz |
+| `--air FLOAT` | -5 to 5 | 1.5 | Bell at 10 kHz (positive = darker, negative = brighter) |
 | `--width FLOAT` | -1 to 1 | 0.0 | Stereo width (+widens, -narrows) |
 | `--bus-comp FLOAT` | 0-1 | 0.0 | SSL bus compressor drive (parallel) |
 | `--intensity FLOAT` | 0-1 | 0.5 | Global intensity (scales expander ratio, notch depth, saturator drive) |
