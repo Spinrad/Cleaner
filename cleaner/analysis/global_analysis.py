@@ -9,6 +9,25 @@ from cleaner.analysis.dynamics import analyse_dynamics, FALLBACK as DF
 from cleaner.analysis.mid_side import analyse_mid_side, FALLBACK as MF
 
 from cleaner.lv2_params import db_to_linear_gain
+from cleaner.constants import (
+    SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, SAT_THRESHOLD_BASE, SAT_THRESHOLD_SLOPE,
+    SAT_CLIP_PENALTY,
+    EXP_THRESH_DELTA_DB, EXP_RATIO_BASE, EXP_RATIO_SLOPE, EXP_RATIO_MIN, EXP_RATIO_MAX,
+    EXP_ATTACK_FRAC, EXP_RELEASE_FRAC, EXP_CLIP_RATIO_FACTOR,
+    NOTCH_PROM_DISABLE_DB, NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MIN_DB, NOTCH_DEPTH_MAX_DB,
+    NOTCH_GAIN_FLOOR_DB, NOTCH_Q_MIN, NOTCH_Q_MAX, NOTCH_DEFAULT_HZ, NOTCH_DEFAULT_Q,
+    NOTCH_DEFAULT_GAIN_DB,
+    AIR_FREQ_HZ, AIR_Q, CLEAN_FREQ_HZ, CLEAN_Q,
+    COMP_DUCK_THRESH_OFFSET_DB, COMP_DUCK_RATIO, COMP_DUCK_ATTACK_MS,
+    COMP_DUCK_RELEASE_FACTOR, COMP_DUCK_RELEASE_MIN_MS,
+    BUS_RATIO, BUS_ATTACK_MS, BUS_RELEASE_MS, BUS_THRESH_CREST_FACTOR, BUS_THRESH_OFFSET,
+    LIMITER_LOOKAHEAD_S, LIMITER_ATTACK_S, LIMITER_RELEASE_S, LIMITER_OVERSAMPLING,
+    INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE,
+    DEHARSH_THRESH_MIN, DEHARSH_THRESH_MAX, DEHARSH_CREST_FACTOR,
+    CLIP_PENALTY_COMP, CLIP_PENALTY_EXP_RATIO, CLIP_PENALTY_EXP_RANGE, CLIP_PENALTY_SAT,
+    CLIP_RATIO_THRESHOLD,
+    MAX_ROOM_MODES,
+)
 
 logger = logging.getLogger(__name__)
 AnalysisReport = dict[str, Any]
@@ -28,17 +47,17 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     # Must be extremely gentle — only nudge transients, never saturate.
     # Albini philosophy: respect dynamics, don't add artificial punch.
     peak_db = report.get("peak_db", -3.0)
-    # Threshold very close to peak — only the loudest 3-6 dB get expanded
-    exp_thresh_db = peak_db - 3.0
+    # Threshold very close to peak — only the loudest few dB get expanded
+    exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
     report["expander_threshold_linear"] = round(
         10.0 ** (exp_thresh_db / 20.0), 4
     )
     # Very gentle ratio: 1.1-1.5
-    report["expander_ratio"] = round(max(1.1, min(1.5, 1.6 - crest * 0.03)), 1)
+    report["expander_ratio"] = round(max(EXP_RATIO_MIN, min(EXP_RATIO_MAX, EXP_RATIO_BASE - crest * EXP_RATIO_SLOPE)), 1)
     # Fast attack to catch transients
-    report["expander_attack_ms"] = round(max(min(attack_ms * 0.5, 10.0), 1.0), 1)
+    report["expander_attack_ms"] = round(max(min(attack_ms * EXP_ATTACK_FRAC, 10.0), 1.0), 1)
     # Quick release to avoid pumping
-    report["expander_release_ms"] = round(max(min(agc_rec * 0.8, 50.0), 15.0), 1)
+    report["expander_release_ms"] = round(max(min(agc_rec * EXP_RELEASE_FRAC, 50.0), 15.0), 1)
     # Range: more expansion when signal is compressed (low crest)
     # 0.4 when crest<10 (AGC probable), 0.15 when crest>14 (dynamic), scaled by intensity
     intensity = report.get("_intensity", 0.5)
@@ -55,17 +74,14 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     # --- Sidechain compressor ---
     # Sidechain ducking threshold: only trigger on LOUD transients (kick/snare),
     # NOT on normal program material. Side channel carries spatial/air frequencies.
-    comp_thresh_db = rms + 6.0  # trigger when Mid exceeds RMS + 6dB
+    comp_thresh_db = rms + COMP_DUCK_THRESH_OFFSET_DB  # trigger when Mid exceeds RMS + 6dB
     report["comp_threshold_linear"] = round(10.0 ** (comp_thresh_db / 20.0), 4)
-    report["comp_release_ms"] = round(max(agc_rec * 1.5, 40.0), 1)
-    report["comp_ratio"] = 4
-    report["comp_attack_ms"] = 2.0
+    report["comp_release_ms"] = round(max(agc_rec * COMP_DUCK_RELEASE_FACTOR, COMP_DUCK_RELEASE_MIN_MS), 1)
+    report["comp_ratio"] = COMP_DUCK_RATIO
+    report["comp_attack_ms"] = COMP_DUCK_ATTACK_MS
 
     # --- De-harsher (adynamicequalizer) ---
-    # threshold is 0-100 scale. Default=0 (always active).
-    # Higher threshold = activates only on louder harshness = less processing.
-    # We want it gentle: only cut when harshness band is genuinely harsh.
-    deharsh_linear = max(8.0, min(50.0, crest * 2.0))
+    deharsh_linear = max(DEHARSH_THRESH_MIN, min(DEHARSH_THRESH_MAX, crest * DEHARSH_CREST_FACTOR))
     report["deharsher_threshold_linear"] = round(deharsh_linear, 1)
     # Gentler ratio: 1.5-3.0 (was 2.0-5.0)
     report["deharsher_filter_ratio"] = round(min(1.5 + crest * 0.06, 3.0), 1)
@@ -85,10 +101,10 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     # --- Saturation (drive + makeup) ---
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
-    eff_glue = glue * (0.3 + intensity * 0.7)  # intensity scales glue effect
-    report["sat_drive_db"] = round(eff_glue * SAT_DRIVE_MULTIPLIER, 1)  # 0→0 dB, 0.5→+6, 1→+12
-    report["sat_threshold_linear"] = round(0.92 - eff_glue * 0.35, 3)  # 0.92→0.57
-    report["sat_makeup_db"] = round(-eff_glue * SAT_DRIVE_MULTIPLIER * SAT_MAKEUP_RATIO, 1)  # compensate half
+    eff_glue = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
+    report["sat_drive_db"] = round(eff_glue * SAT_DRIVE_MULTIPLIER, 1)
+    report["sat_threshold_linear"] = round(SAT_THRESHOLD_BASE - eff_glue * SAT_THRESHOLD_SLOPE, 3)
+    report["sat_makeup_db"] = round(-eff_glue * SAT_DRIVE_MULTIPLIER * SAT_MAKEUP_RATIO, 1)
     report["sat_glue"] = glue
     report["sat_softclip_type"] = 0
 
@@ -99,46 +115,45 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     # --- Bus compressor (SSL-style glue) ---
     bus = report.get("_bus_comp", 0.0)
     # Threshold: compress the body, not the transients
-    # Higher bus_comp = lower threshold = more compression
-    bus_thresh_db = rms - crest * 0.3 + (1.0 - bus) * 12.0  # 0→-8dB, 1→-20dB
+    bus_thresh_db = rms - crest * BUS_THRESH_CREST_FACTOR + (1.0 - bus) * BUS_THRESH_OFFSET
     report["bus_threshold_linear"] = round(10.0 ** (bus_thresh_db / 20.0), 4)
     report["bus_mix"] = round(bus, 2)  # parallel compression
-    report["bus_ratio"] = 2  # SSL classic
-    report["bus_attack_ms"] = 10  # slow, lets transients through
-    report["bus_release_ms"] = 100  # smooth
+    report["bus_ratio"] = BUS_RATIO  # SSL classic
+    report["bus_attack_ms"] = BUS_ATTACK_MS  # slow, lets transients through
+    report["bus_release_ms"] = BUS_RELEASE_MS  # smooth
 
     # --- Notches ---
     modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
-    while len(modes_hz) < 3: modes_hz.append(450)
+    while len(modes_hz) < MAX_ROOM_MODES: modes_hz.append(450)
     modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
-    while len(modes_q) < 3: modes_q.append(5)
+    while len(modes_q) < MAX_ROOM_MODES: modes_q.append(5)
     prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
-    while len(prominences) < 3: prominences.append(3)
+    while len(prominences) < MAX_ROOM_MODES: prominences.append(3)
     mult = report.get("_notch_multiplier", 1.0)
     intensity = report.get("_intensity", 0.5)
-    for i in range(3):
+    for i in range(MAX_ROOM_MODES):
         # Wider Q: clamp to [3, 10] for musically useful bandwidth
-        q = min(max(modes_q[i], 3.0), 10.0)
+        q = min(max(modes_q[i], NOTCH_Q_MIN), NOTCH_Q_MAX)
         prom = abs(prominences[i])
         # Skip if prominence < 3 dB (not a real mode, just spectral noise)
-        if prom < 3.0:
+        if prom < NOTCH_PROM_DISABLE_DB:
             g = 0.0
         else:
-            # Depth proportional to prominence: 0.5× prominence, bounded [-9, -2] dB
-            depth = min(prom * 0.5, 9.0)
-            depth = max(depth, 2.0)
+            # Depth proportional to prominence: 0.5× prominence, bounded [2, 9] dB
+            depth = min(prom * NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MAX_DB)
+            depth = max(depth, NOTCH_DEPTH_MIN_DB)
             g = -(depth * mult * intensity)
-        g = max(g, -12.0)  # hard floor
+        g = max(g, NOTCH_GAIN_FLOOR_DB)  # hard floor
         report[f"notch_freq_{i+1}"] = round(modes_hz[i], 1)
         report[f"notch_q_{i+1}"] = round(q, 1)
         report[f"notch_gain_{i+1}"] = round(g, 1)
 
     # --- Clipping penalty ---
     if report.get("is_heavily_clipped", False):
-        report["comp_threshold_linear"] = round(report["comp_threshold_linear"] * 0.8, 4)
-        report["expander_ratio"] = round(max(report["expander_ratio"] * 0.6, 1.1), 1)
-        report["expander_range_linear"] = 0.1  # almost no expansion on clipped audio
-        report["sat_threshold_linear"] = min(report["sat_threshold_linear"] + 0.05, 0.99)
+        report["comp_threshold_linear"] = round(report["comp_threshold_linear"] * CLIP_PENALTY_COMP, 4)
+        report["expander_ratio"] = round(max(report["expander_ratio"] * CLIP_PENALTY_EXP_RATIO, EXP_RATIO_MIN), 1)
+        report["expander_range_linear"] = CLIP_PENALTY_EXP_RANGE
+        report["sat_threshold_linear"] = min(report["sat_threshold_linear"] + CLIP_PENALTY_SAT, 0.99)
         logger.warning("Clipping penalty applied: expander/saturation reduced")
 
     return report
@@ -194,15 +209,15 @@ def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]
     """
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
-    eff_glue = glue * (0.3 + intensity * 0.7)
+    eff_glue = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
     
     drive_db = eff_glue * SAT_DRIVE_MULTIPLIER
     
-    threshold_linear = round(0.92 - eff_glue * 0.35, 3)
+    threshold_linear = round(SAT_THRESHOLD_BASE - eff_glue * SAT_THRESHOLD_SLOPE, 3)
     
     # Clipping penalty: raise threshold (less saturation) on clipped audio
     if report.get("is_heavily_clipped", False):
-        threshold_linear = min(threshold_linear + 0.05, 0.99)
+        threshold_linear = min(threshold_linear + SAT_CLIP_PENALTY, 0.99)
     
     makeup_db = round(-drive_db * SAT_MAKEUP_RATIO, 1)
     
@@ -229,25 +244,24 @@ def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[st
     em = 1.0
     
     # Attack level (threshold): peak - 3 dB, converted to linear G
-    exp_thresh_db = peak_db - 3.0
+    exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
     al = db_to_linear_gain(exp_thresh_db)
     
     # Ratio: DECREASES with crest (more expansion when compressed)
-    # crest=4 (AGC) -> 1.48, crest=12 -> 1.24, crest=18 -> 1.1
-    base_ratio = max(1.1, 1.6 - crest * 0.03)
+    base_ratio = max(EXP_RATIO_MIN, EXP_RATIO_BASE - crest * EXP_RATIO_SLOPE)
     # Intensity scales the amount ABOVE 1.0: er = 1.0 + (base_ratio - 1.0) * intensity
     er = 1.0 + (base_ratio - 1.0) * intensity
-    er = max(1.05, min(1.5, er))  # clamp to real port range
+    er = max(1.05, min(EXP_RATIO_MAX, er))  # clamp to real port range
     
     # Clipping penalty: reduce expansion on clipped audio
     if report.get("is_heavily_clipped", False):
-        er = max(1.05, er * 0.6)  # almost no expansion on clipped audio
+        er = max(1.05, er * EXP_CLIP_RATIO_FACTOR)  # almost no expansion on clipped audio
     
     # Attack: fast to catch transients
-    at_val = max(1.0, min(attack_ms * 0.5, 10.0))
+    at_val = max(1.0, min(attack_ms * EXP_ATTACK_FRAC, 10.0))
     
     # Release: AGC recovery based, clamped
-    rt_val = max(15.0, min(agc_rec * 0.8, 50.0))
+    rt_val = max(15.0, min(agc_rec * EXP_RELEASE_FRAC, 50.0))
     
     # Knee: moderate
     kn = 0.5
@@ -279,13 +293,13 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     Position: after de-harsher, before saturator.
     """
     modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
-    while len(modes_hz) < 3:
+    while len(modes_hz) < MAX_ROOM_MODES:
         modes_hz.append(450)
     modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
-    while len(modes_q) < 3:
+    while len(modes_q) < MAX_ROOM_MODES:
         modes_q.append(5)
     prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
-    while len(prominences) < 3:
+    while len(prominences) < MAX_ROOM_MODES:
         prominences.append(3)
     
     mult = report.get("_notch_multiplier", 1.0)
@@ -298,12 +312,12 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     }
     
     # Notch bands (0, 1, 2)
-    for i in range(3):
+    for i in range(MAX_ROOM_MODES):
         f0 = modes_hz[i]
-        q_val = min(max(modes_q[i], 3.0), 10.0)
+        q_val = min(max(modes_q[i], NOTCH_Q_MIN), NOTCH_Q_MAX)
         prom = abs(prominences[i])
         
-        if prom < 3.0:
+        if prom < NOTCH_PROM_DISABLE_DB:
             # Disable band
             params[f"s_{i}"] = 0.0
             params[f"g_{i}"] = 1.0  # 0 dB = linear gain 1.0
@@ -313,10 +327,10 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
             params[f"ft_{i}"] = 0.0  # off
             params[f"fm_{i}"] = 0.0
         else:
-            depth_db = min(prom * 0.5, 9.0)
-            depth_db = max(depth_db, 2.0)
+            depth_db = min(prom * NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MAX_DB)
+            depth_db = max(depth_db, NOTCH_DEPTH_MIN_DB)
             gain_db = -(depth_db * mult * intensity)
-            gain_db = max(gain_db, -12.0)
+            gain_db = max(gain_db, NOTCH_GAIN_FLOOR_DB)
             
             params[f"s_{i}"] = 0.0  # not soloed
             params[f"ft_{i}"] = 1.0  # Bell (parametric cut)
@@ -329,17 +343,17 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     # Air band (band 3): Bell at 10 kHz, Q=2.0
     params["s_3"] = 0.0
     if abs(air_db) > 0.01:
-        q_air = 2.0
+        q_air = AIR_Q
         params["ft_3"] = 1.0   # Bell
         params["fm_3"] = 0.0
-        params["f_3"] = 10000.0
-        params["w_3"] = round(q_air / 2.5, 1)   # same formula as notches → 0.8
+        params["f_3"] = AIR_FREQ_HZ
+        params["w_3"] = round(q_air / 2.5, 1)
         params["q_3"] = q_air
         params["g_3"] = round(db_to_linear_gain(air_db), 4)
     else:
         params["ft_3"] = 0.0
         params["fm_3"] = 0.0
-        params["f_3"] = 10000.0
+        params["f_3"] = AIR_FREQ_HZ
         params["w_3"] = 4.0
         params["q_3"] = 0.0
         params["g_3"] = 1.0
@@ -350,14 +364,14 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, flo
     if clean_db < -0.01:
         params["ft_4"] = 1.0    # Bell
         params["fm_4"] = 0.0
-        params["f_4"] = 600.0   # center of 450-750 Hz mud zone
+        params["f_4"] = CLEAN_FREQ_HZ   # center of 450-750 Hz mud zone
         params["w_4"] = 4.0     # Q≈1.5 → moderate width
-        params["q_4"] = 1.5
+        params["q_4"] = CLEAN_Q
         params["g_4"] = round(db_to_linear_gain(clean_db), 4)
     else:
         params["ft_4"] = 0.0
         params["fm_4"] = 0.0
-        params["f_4"] = 600.0
+        params["f_4"] = CLEAN_FREQ_HZ
         params["w_4"] = 4.0
         params["q_4"] = 0.0
         params["g_4"] = 1.0
@@ -390,7 +404,7 @@ def compute_compressor_lsp_params(report: AnalysisReport, tracker=None) -> dict[
     bus_comp = report.get("_bus_comp", 0.0)
     
     # Threshold: compress the body, not transients
-    bus_thresh_db = rms_db - crest * 0.3 + (1.0 - bus_comp) * 12.0
+    bus_thresh_db = rms_db - crest * BUS_THRESH_CREST_FACTOR + (1.0 - bus_comp) * BUS_THRESH_OFFSET
     al = db_to_linear_gain(bus_thresh_db)
     
     # Dry/wet for parallel compression
@@ -400,9 +414,9 @@ def compute_compressor_lsp_params(report: AnalysisReport, tracker=None) -> dict[
     return {
         "cm": 0.0,      # Downward compression
         "al": round(al, 4),
-        "cr": 2.0,      # SSL classic 2:1
-        "at": 10.0,     # slow attack, lets transients through
-        "rt": 100.0,    # smooth release
+        "cr": BUS_RATIO,      # SSL classic 2:1
+        "at": BUS_ATTACK_MS,     # slow attack, lets transients through
+        "rt": BUS_RELEASE_MS,    # smooth release
         "kn": 0.5,      # medium knee
         "mk": 1.0,      # unity makeup
         "cdr": round(cdr, 2),
@@ -429,10 +443,10 @@ def compute_limiter_lsp_params(report: AnalysisReport, tracker=None) -> dict[str
         "th": round(th_val, 4),
         "knee": 1.0,    # soft knee
         "boost": 1.0,   # boost enabled
-        "lk": 0.1,      # 100 ms lookahead (port minimum, unit=s)
-        "at": 0.25,     # 250 ms attack (port minimum, unit=s)
-        "rt": 0.25,     # 250 ms release (port minimum, unit=s)
-        "ovs": 4.0,     # 4x oversampling
+        "lk": LIMITER_LOOKAHEAD_S,
+        "at": LIMITER_ATTACK_S,
+        "rt": LIMITER_RELEASE_S,
+        "ovs": LIMITER_OVERSAMPLING,
         "alr": 1.0,     # adaptive release enabled
         "g_in": 1.0,
         "g_out": 1.0,

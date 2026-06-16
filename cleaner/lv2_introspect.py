@@ -11,30 +11,16 @@ import json
 import logging
 import re
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from cleaner.lv2_types import PortInfo, PluginInfo
+from cleaner.lv2_params import EXPLICIT_UNITS, get_plugin_unit
 
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = Path("/tmp/cleaner_lv2_cache.json")
 LSP_URI_PREFIX = "http://lsp-plug.in/plugins/lv2/"
-
-
-@dataclass
-class PortInfo:
-    symbol: str
-    name: str = ""
-    min_val: float = 0.0
-    max_val: float = 1.0
-    default_val: float = 0.0
-    unit: str = ""
-
-
-@dataclass
-class PluginInfo:
-    uri: str
-    ports: dict[str, PortInfo] = field(default_factory=dict)
 
 
 def _run_lv2ls_list() -> list[str]:
@@ -140,7 +126,6 @@ def _parse_ffmpeg_lv2_help(stderr: str, plugin_slug: str = "") -> dict[str, Port
             min_v, max_v, def_v = float(min_s), float(max_s), float(def_s)
         except ValueError:
             continue
-        from cleaner.lv2_params import EXPLICIT_UNITS, get_plugin_unit
         # Priority 1: per-plugin unit table (authority from CDC §4.4)
         unit = ""
         if plugin_slug:

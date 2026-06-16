@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import math
-from cleaner.lv2_introspect import PortInfo
+from cleaner.lv2_types import PortInfo
 
 
 def db_to_linear_gain(db: float) -> float:

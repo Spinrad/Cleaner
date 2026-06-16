@@ -68,15 +68,15 @@ def _parse_time(t: str) -> float:
               help="Keep intermediate files.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Analyse + show filtergraph (no render).")
-@click.option("--target-lufs", type=float, default=-14.0,
+@click.option("--target-lufs", type=click.FloatRange(-20.0, -8.0), default=-14.0,
               help="Target LUFS [-20.0, -8.0].")
-@click.option("--ceiling", type=float, default=-1.1,
+@click.option("--ceiling", type=click.FloatRange(-3.0, -0.3), default=-1.1,
               help="Limiter ceiling dBFS [-3.0, -0.3].")
-@click.option("--notch-intensity", type=float, default=1.0,
+@click.option("--notch-intensity", type=click.FloatRange(0.0, 2.0), default=1.0,
               help="Room mode attenuation multiplier [0.0, 2.0].")
-@click.option("--tame-cymbals", type=float, default=0.0,
+@click.option("--tame-cymbals", type=click.FloatRange(-12.0, 0.0), default=0.0,
               help="De-harsher threshold delta [-12.0, 0.0] dB.")
-@click.option("--timeout", type=int, default=3600,
+@click.option("--timeout", type=click.IntRange(1, 86400), default=3600,
               help="Render timeout seconds.")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Verbose logging.")
@@ -87,17 +87,17 @@ def _parse_time(t: str) -> float:
 @click.option("--preset", type=click.Choice(list(PRESETS.keys()), case_sensitive=False),
               default=None, help="Mastering preset. Overrides color defaults.")
 # Mastering color (floats -- preset-aware)
-@click.option("--glue", type=float, default=0.15,
+@click.option("--glue", type=click.FloatRange(0.0, 1.0), default=0.15,
               help="Saturation drive (0.0=off, 0.5=medium, 1.0=max).")
-@click.option("--air", type=float, default=0.0,
+@click.option("--air", type=click.FloatRange(-5.0, 5.0), default=0.0,
               help="Bell boost/cut at 10kHz in dB [-5.0, 5.0]. 0=neutral, positive=brighter.")
-@click.option("--clean-mediums", "-cm", type=float, default=0.0,
+@click.option("--clean-mediums", "-cm", type=click.FloatRange(-6.0, 0.0), default=0.0,
               help="Low-mid cleanup cut at 600Hz in dB [-6.0, 0.0]. 0=off.")
-@click.option("--width", type=float, default=0.0,
+@click.option("--width", type=click.FloatRange(-1.0, 1.0), default=0.0,
               help="Stereo width [-1.0, 1.0]. +widens, -narrows.")
-@click.option("--bus-comp", type=float, default=0.0,
+@click.option("--bus-comp", type=click.FloatRange(0.0, 1.0), default=0.0,
               help="SSL bus compressor drive [0.0, 1.0].")
-@click.option("--intensity", type=float, default=0.5,
+@click.option("--intensity", type=click.FloatRange(0.0, 1.0), default=0.5,
               help="Global intensity [0.0, 1.0]. Scales glue, notches, expander. 0=transparent, 1=maximum.")
 @click.option("--force-native", is_flag=True, default=False,
               help="Use full-native ffmpeg chain (no LSP/LV2 plugins).")
@@ -144,38 +144,11 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
     if output is None:
         output = source.parent / f"{source.stem}_clean.wav"
 
-    errors = []
-    if not (-12.0 <= tame_cymbals <= 0.0):
-        errors.append(f"--tame-cymbals range [-12,0], got {tame_cymbals}")
-    if not (0.0 <= notch_intensity <= 2.0):
-        errors.append(f"--notch-intensity range [0,2], got {notch_intensity}")
-    if not (-20.0 <= target_lufs <= -8.0):
-        errors.append(f"--target-lufs range [-20,-8], got {target_lufs}")
-    if not (-3.0 <= ceiling <= -0.3):
-        errors.append(f"--ceiling range [-3,-0.3], got {ceiling}")
-    if not (0.0 <= glue <= 1.0):
-        errors.append(f"--glue range [0,1], got {glue}")
-    if not (-5.0 <= air <= 5.0):
-        errors.append(f"--air range [-5,5], got {air}")
-    if not (-6.0 <= clean_mediums <= 0.0):
-        errors.append(f"--clean-mediums range [-6,0], got {clean_mediums}")
-    if not (-1.0 <= width <= 1.0):
-        errors.append(f"--width range [-1,1], got {width}")
-    if not (0.0 <= bus_comp <= 1.0):
-        errors.append(f"--bus-comp range [0,1], got {bus_comp}")
-    if not (0.0 <= intensity <= 1.0):
-        errors.append(f"--intensity range [0,1], got {intensity}")
-    if errors:
-        for e in errors: click.echo(f"  Error: {e}", err=True)
-        sys.exit(1)
-
     # Parse punch-in/out times
     punchin_s = _parse_time(punchin) if punchin else None
     punchout_s = _parse_time(punchout) if punchout else None
     if punchin_s is not None and punchout_s is not None and punchin_s >= punchout_s:
-        errors.append(f"--punchin ({punchin}) must be before --punchout ({punchout})")
-    if errors:
-        for e in errors: click.echo(f"  Error: {e}", err=True)
+        click.echo(f"  Error: --punchin ({punchin}) must be before --punchout ({punchout})", err=True)
         sys.exit(1)
 
     # -- Apply preset ----

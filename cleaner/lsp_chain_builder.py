@@ -7,6 +7,20 @@ Handles URI escaping and control parameter formatting.
 
 from __future__ import annotations
 
+from cleaner.analysis.global_analysis import (
+    compute_expander_lsp_params,
+    compute_eq_lsp_params,
+    compute_deharsher_lsp_params,
+    compute_compressor_lsp_params,
+    compute_limiter_lsp_params,
+    compute_native_saturation_params,
+)
+from cleaner.gain_tracking import GainTracker
+from cleaner.lv2_introspect import get_plugin_info
+from cleaner.lv2_params import clamp_to_port
+from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI,
+                              DEHARSHER_URI, COMPRESSOR_URI, LIMITER_URI)
+
 
 def build_lv2_node(uri: str, params: dict[str, float]) -> str:
     """Build a single lv2 filter node for ffmpeg filter_complex.
@@ -108,19 +122,6 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     Returns:
         A complete filter_complex string.
     """
-    from cleaner.analysis.global_analysis import (
-        compute_expander_lsp_params,
-        compute_eq_lsp_params,
-        compute_compressor_lsp_params,
-        compute_limiter_lsp_params,
-        compute_deharsher_lsp_params,
-        compute_native_saturation_params,
-    )
-    from cleaner.gain_tracking import GainTracker
-    from cleaner.lv2_introspect import get_plugin_info
-    from cleaner.lv2_params import clamp_to_port
-    from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI,
-                                  COMPRESSOR_URI, LIMITER_URI, DEHARSHER_URI)
     
     peak_db = report.get("peak_db", -3.0)
     rms_db = report.get("rms_db", -15.0)

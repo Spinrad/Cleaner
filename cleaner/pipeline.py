@@ -1,10 +1,11 @@
 """Pipeline orchestrator — hybrid ffmpeg + LSP/LV2, before/after metrics, rich output."""
 
 from __future__ import annotations
-import logging, shutil, subprocess, uuid
+import logging, shutil, subprocess, uuid, copy
 from pathlib import Path
 from typing import Optional
 import numpy as np
+import soundfile as sf
 import click
 from cleaner.analysis.global_analysis import get_global_analysis, compute_ffmpeg_params, AnalysisReport
 from cleaner.ffmpeg_chain import build_filtergraph
@@ -12,6 +13,10 @@ from cleaner.lsp_chain_builder import build_lsp_filtergraph
 from cleaner.io_adapter import (convert_to_wav, measure_lufs, apply_lufs_gain,
                                 FFmpegNotFoundError, SourceDecodeError,
                                 LUFSMeasurementError, require_ffmpeg)
+from cleaner.lv2_introspect import get_plugin_info
+from cleaner.lsp_uris import REQUIRED_URIS
+from cleaner.constants import SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE
+from cleaner.types import MasteringSettings
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,6 @@ class PipelineResult:
 def _measure_file(wav_path: Path) -> dict:
     """Measure peak, RMS, crest, clipping on a WAV file."""
     try:
-        import soundfile as sf
         y, sr = sf.read(str(wav_path), always_2d=True, dtype='float32')
         peak = 20 * np.log10(max(np.max(np.abs(y)), 1e-10))
         rms = 20 * np.log10(np.sqrt(max(np.mean(y ** 2), 1e-10)))
@@ -50,8 +54,6 @@ def _measure_file(wav_path: Path) -> dict:
 def _lsp_available() -> bool:
     """Check if required LSP plugins are available."""
     try:
-        from cleaner.lv2_introspect import get_plugin_info
-        from cleaner.lsp_uris import REQUIRED_URIS
         required = REQUIRED_URIS
         for uri in required:
             info = get_plugin_info(uri)
@@ -180,9 +182,9 @@ def _print_chain_summary(report, stages, use_lsp=False):
         if use_lsp:
             glue = report.get('_glue', 0.15)
             intensity = report.get('_intensity', 0.5)
-            eff = glue * (0.3 + intensity * 0.7)
-            drive_db = eff * 12.0
-            makeup_db = -drive_db * 0.4
+            eff = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
+            drive_db = eff * SAT_DRIVE_MULTIPLIER
+            makeup_db = -drive_db * SAT_MAKEUP_RATIO
             _box_line(f"{i}. Saturation (drive+makeup, 4x oversample)", "cyan")
             _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB", "cyan")
         else:
@@ -292,19 +294,26 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         result.report = report
         _print_analysis_report(report)
 
-        # 3. Deltas + params
-        import copy
+        # 3. Settings + params
+        settings = MasteringSettings(
+            glue=glue, air=air, width=width, bus_comp=bus_comp,
+            intensity=intensity, ceiling_db=ceiling, target_lufs=target_lufs,
+            notch_multiplier=notch_intensity, tame_cymbals=tame_cymbals,
+            clean_mediums=clean_mediums,
+        )
         report = copy.deepcopy(report)
-        report["_ceiling_db"] = ceiling
-        report["_target_lufs"] = target_lufs
-        report["_notch_multiplier"] = notch_intensity
-        report["_tame_cymbals"] = tame_cymbals
-        report["_glue"] = glue
-        report["_air"] = air
-        report["_width"] = width
-        report["_bus_comp"] = bus_comp
-        report["_intensity"] = intensity
-        report["_clean_mediums"] = clean_mediums
+        # Inject settings into report for downstream readers (backward compat).
+        # Future: readers should accept MasteringSettings directly.
+        report["_ceiling_db"] = settings.ceiling_db
+        report["_target_lufs"] = settings.target_lufs
+        report["_notch_multiplier"] = settings.notch_multiplier
+        report["_tame_cymbals"] = settings.tame_cymbals
+        report["_glue"] = settings.glue
+        report["_air"] = settings.air
+        report["_width"] = settings.width
+        report["_bus_comp"] = settings.bus_comp
+        report["_intensity"] = settings.intensity
+        report["_clean_mediums"] = settings.clean_mediums
 
         # Re‑compute ffmpeg params now that mastering flags are set
         report = compute_ffmpeg_params(report)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -52,7 +53,6 @@ def require_ffmpeg() -> Path:
     Raises:
         FFmpegNotFoundError: If ffmpeg is not found.
     """
-    import shutil
 
     path = shutil.which("ffmpeg")
     if path is None:
@@ -237,8 +237,6 @@ def apply_lufs_gain(
     )
 
     if abs(gain_db) < 0.05:
-        # Gain is negligible; copy the file instead of re-encoding
-        import shutil
         shutil.copy2(input_wav, output_wav)
         logger.info("Gain < 0.05 dB — copying file without re-encoding.")
         return output_wav, 0.0
