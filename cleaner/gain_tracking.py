@@ -1,7 +1,9 @@
-"""Analytic gain tracking along the DSP chain.
+"""Gain bookkeeping along the DSP chain.
 
-Predicts peak/RMS level after each stage without performing
-any mid-graph audio measurement (forbidden in single-pass).
+Predicts peak/RMS level after each stage by applying stage gain offsets.
+This is a linear gain ledger — it does NOT model frequency-dependent
+loudness, compression/saturation non-linearities, or crest factor changes.
+Use as a coarse heuristic; actual peak/RMS must be measured on the output.
 """
 
 from __future__ import annotations

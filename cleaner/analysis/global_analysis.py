@@ -13,6 +13,10 @@ from cleaner.lv2_params import db_to_linear_gain
 logger = logging.getLogger(__name__)
 AnalysisReport = dict[str, Any]
 
+# Shared musical constants — single source of truth for both builders.
+SAT_DRIVE_MULTIPLIER = 12.0  # drive = eff_glue * SAT_DRIVE_MULTIPLIER (0→0, 1→+12 dB)
+SAT_MAKEUP_RATIO = 0.4       # makeup = -drive * SAT_MAKEUP_RATIO
+
 
 def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     crest = report.get("crest_factor_db", 12.0)
@@ -82,9 +86,9 @@ def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
     eff_glue = glue * (0.3 + intensity * 0.7)  # intensity scales glue effect
-    report["sat_drive_db"] = round(eff_glue * 12.0, 1)  # 0→0 dB, 0.5→+6, 1→+12
+    report["sat_drive_db"] = round(eff_glue * SAT_DRIVE_MULTIPLIER, 1)  # 0→0 dB, 0.5→+6, 1→+12
     report["sat_threshold_linear"] = round(0.92 - eff_glue * 0.35, 3)  # 0.92→0.57
-    report["sat_makeup_db"] = round(-eff_glue * 12.0 * 0.5, 1)  # compensate half
+    report["sat_makeup_db"] = round(-eff_glue * SAT_DRIVE_MULTIPLIER * SAT_MAKEUP_RATIO, 1)  # compensate half
     report["sat_glue"] = glue
     report["sat_softclip_type"] = 0
 
@@ -192,11 +196,15 @@ def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]
     intensity = report.get("_intensity", 0.5)
     eff_glue = glue * (0.3 + intensity * 0.7)
     
-    drive_db = eff_glue * 16.0
+    drive_db = eff_glue * SAT_DRIVE_MULTIPLIER
     
     threshold_linear = round(0.92 - eff_glue * 0.35, 3)
     
-    makeup_db = round(-drive_db * 0.4, 1)
+    # Clipping penalty: raise threshold (less saturation) on clipped audio
+    if report.get("is_heavily_clipped", False):
+        threshold_linear = min(threshold_linear + 0.05, 0.99)
+    
+    makeup_db = round(-drive_db * SAT_MAKEUP_RATIO, 1)
     
     return {
         "sat_drive_db": round(drive_db, 1),
@@ -230,6 +238,10 @@ def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[st
     # Intensity scales the amount ABOVE 1.0: er = 1.0 + (base_ratio - 1.0) * intensity
     er = 1.0 + (base_ratio - 1.0) * intensity
     er = max(1.05, min(1.5, er))  # clamp to real port range
+    
+    # Clipping penalty: reduce expansion on clipped audio
+    if report.get("is_heavily_clipped", False):
+        er = max(1.05, er * 0.6)  # almost no expansion on clipped audio
     
     # Attack: fast to catch transients
     at_val = max(1.0, min(attack_ms * 0.5, 10.0))

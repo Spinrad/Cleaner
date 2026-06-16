@@ -124,7 +124,7 @@ def test_mastering_flags():
               "expander": False, "ducking": False, "deharsher": False,
               "notches": False, "saturation": False, "limiter": False}
     g = build_filtergraph(report, stages)
-    assert "treble" in g
+    assert "equalizer" in g
     assert "gain=2.0" in g
     assert "stereotools=mode=lr>lr" in g
     assert "base=0.3" in g
@@ -153,3 +153,48 @@ def test_bus_comp_enabled():
     assert "ratio=2" in g
     assert "attack=10" in g
     assert "knee=4" in g
+
+
+def test_ms_roundtrip_neutral():
+    """M/S encode → decode must be gain-neutral for mono input with ducking off."""
+    import subprocess, tempfile, struct, math
+    sample_rate = 48000
+    duration_s = 1.0
+    freq = 1000.0
+    n_samples = int(sample_rate * duration_s)
+    samples = [math.sin(2 * math.pi * freq * i / sample_rate) * 0.5 for i in range(n_samples)]
+    raw = b"".join(struct.pack("<f", s) for s in samples)
+    raw_stereo = b"".join(struct.pack("<f", s) + struct.pack("<f", s) for s in samples)
+    
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as f:
+        f.write(raw_stereo)
+        raw_path = f.name
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as f:
+        out_path = f.name
+    
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-f", "f32le", "-ar", str(sample_rate), "-ac", "2",
+            "-i", raw_path,
+            "-filter_complex",
+            "[0:a]stereotools=mode=lr>ms,stereotools=mode=ms>lr[out]",
+            "-map", "[out]", "-f", "f32le", "-c:a", "pcm_f32le", out_path,
+        ]
+        proc = subprocess.run(cmd, capture_output=True, timeout=10)
+        assert proc.returncode == 0, f"ffmpeg failed: {proc.stderr[-500:].decode()}"
+        
+        with open(out_path, "rb") as f:
+            out_data = f.read()
+        out_samples = struct.unpack(f"<{n_samples * 2}f", out_data)
+        
+        max_diff = 0.0
+        for i in range(n_samples):
+            diff_l = abs(samples[i] - out_samples[i * 2])
+            diff_r = abs(samples[i] - out_samples[i * 2 + 1])
+            max_diff = max(max_diff, diff_l, diff_r)
+        
+        assert max_diff < 0.02, f"M/S round-trip gain error: max diff = {max_diff:.6f}"
+    finally:
+        import os
+        os.unlink(raw_path)
+        os.unlink(out_path)

@@ -67,8 +67,7 @@ EXPLICIT_UNITS: dict[str, str] = {
     "em": "enum",       # 0=Down, 1=Up
     "al": "linear_gain", # threshold as G multiplier
     "er": "ratio",
-    "at": "ms",         # 0-2000 ms
-    "rt": "ms",         # 0-5000 ms
+    # at/rt removed: handled by _infer_unit (msec if max_v > 20, sec otherwise)
     "kn": "linear_gain",
     "mk": "linear_gain",
     "g_in": "linear_gain",
@@ -91,7 +90,7 @@ EXPLICIT_UNITS: dict[str, str] = {
     "cr": "ratio",
     "cdr": "linear_gain",
     "cwt": "linear_gain",
-    # (al, at, rt, kn, mk, g_in, g_out, scm, sla already covered above)
+    # (al, kn, mk, g_in, g_out, scm, sla already covered above)
 
     # --- limiter_stereo ---
     "th": "linear_gain", # threshold as G
@@ -101,21 +100,18 @@ EXPLICIT_UNITS: dict[str, str] = {
     "ovs": "enum",      # 0-20, oversampling factor
     "alr": "bool",      # 0-1, adaptive release
     "scp": "linear_gain",
-    # (g_in, g_out, mode already covered; limiter at/rt are in seconds, override)
+    # at/rt for limiter: handled by _infer_unit (max_v <= 20 → "s")
 
     # --- sc_compressor_stereo ---
     "sct": "enum",      # sidechain type
     "shpf": "Hz",
     "slpf": "Hz",
-    # (cm, al, cr, at, rt, kn, mk, g_in, g_out, scm, sla, cdr, cwt already covered)
+    # (cm, al, cr, kn, mk, g_in, g_out, scm, sla, cdr, cwt already covered above)
 }
-
-# Override: limiter at/rt are in SECONDS (range 0-20), not ms
-EXPLICIT_UNITS["limiter_at"] = "s"  # not a real symbol, just documentation
-# Actual override: these symbols appear in limiter context
-_LIMITER_TIME_PORTS = {"at", "rt", "lk", "alr_at", "alr_rt"}
-for _sym in _LIMITER_TIME_PORTS:
-    EXPLICIT_UNITS[_sym] = "s"  # limiter uses seconds for time ports
+# IMPORTANT: at/rt are NOT in EXPLICIT_UNITS because their native unit depends
+# on the plugin: expander/compressor use milliseconds (max ~2000),
+# limiter uses seconds (max ~20).  _infer_unit() handles this by
+# checking max_v > 20 → "ms", else "s".
 
 
 def get_port_unit(symbol: str, fallback_infer_fn=None) -> str:

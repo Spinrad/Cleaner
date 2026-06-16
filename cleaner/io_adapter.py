@@ -102,13 +102,17 @@ def convert_to_wav(
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {output_path}")
 
-    # Build ffmpeg command with optional trim
+    # Build ffmpeg command with optional trim.
+    # -ss before -i for fast seeking, then -t for exact duration.
     cmd = [str(ffmpeg_path), "-y" if overwrite else "-n"]
     if start_s is not None:
         cmd += ["-ss", str(start_s)]
     cmd += ["-i", str(source_path)]
     if end_s is not None:
-        cmd += ["-to", str(end_s)]
+        if start_s is not None:
+            cmd += ["-t", str(end_s - start_s)]
+        else:
+            cmd += ["-to", str(end_s)]
     cmd += ["-acodec", bit_depth, "-ar", str(sample_rate), "-ac", "2", str(output_path)]
 
     logger.info("Converting source to WAV: %s → %s", source_path.name, output_path.name)
@@ -202,7 +206,7 @@ def apply_lufs_gain(
         1. Measure integrated LUFS via ffmpeg ebur128.
         2. Apply gain via ffmpeg volume filter.
 
-    The gain is clamped to [-3.0, +6.0] dB to avoid extreme changes.
+    The gain is clamped to [-6.0, +14.0] dB to avoid extreme changes.
 
     Args:
         input_wav: Path to the rendered WAV file.
@@ -225,7 +229,7 @@ def apply_lufs_gain(
 
     # Passe 2: calculate and clamp gain
     gain_db = target_lufs - measured_lufs
-    gain_db = max(min(gain_db, 6.0), -3.0)
+    gain_db = max(min(gain_db, 14.0), -6.0)
 
     logger.info(
         "LUFS normalisation: measured=%.1f LUFS, target=%.1f LUFS, gain=%.2f dB",

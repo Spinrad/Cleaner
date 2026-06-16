@@ -98,14 +98,8 @@ def detect_room_modes_by_persistence(freqs: np.ndarray, S: np.ndarray):
     fh, qs, gs = [], [], []
     for idx in top:
         f0 = float(bf[idx])
-        # Prominence: peak magnitude minus local median (±1/3 octave ≈ factor 1.26 each side)
-        # This measures how much the peak sticks out, not its absolute level.
-        oct_third_bins = max(1, int(f0 * 0.26 / (bf[1]-bf[0])))
-        lo = max(0, idx - oct_third_bins)
-        hi = min(len(band_avg) - 1, idx + oct_third_bins)
-        local_median = float(np.median(band_avg[lo:hi+1]))
         peak_val = band_avg[idx]
-        # Prominence relative to the band's median level (not local ratio of tiny values)
+        # Prominence relative to the band's median level
         band_median = float(np.median(band_avg[band_avg > 1e-10])) if np.any(band_avg > 1e-10) else 1e-10
         ref_level = max(band_median, 1e-10)
         peak_db = 20.0 * np.log10(max(peak_val, 1e-10))

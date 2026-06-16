@@ -181,44 +181,64 @@ def _get_version_info() -> dict[str, str]:
     try:
         r = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
         info["ffmpeg"] = r.stdout.splitlines()[0] if r.stdout else "unknown"
-    except Exception:
+    except Exception as exc:
+        logger.warning("ffmpeg -version failed: %s", exc)
         info["ffmpeg"] = "unknown"
     try:
         r = subprocess.run(["dpkg", "-s", "lsp-plugins-lv2"], capture_output=True, text=True, timeout=5)
         for line in r.stdout.splitlines():
             if line.startswith("Version:"):
                 info["lsp"] = line.split(":", 1)[-1].strip()
-    except Exception:
+    except Exception as exc:
+        logger.warning("dpkg lsp-plugins-lv2 failed: %s", exc)
         info["lsp"] = "unknown"
     return info
 
 
+# Module-level memoization — avoids repeated subprocess calls.
+_cached_version_info: Optional[dict[str, str]] = None
+_cached_plugins: Optional[dict[str, PluginInfo]] = None
+
+
+def _cached_version():
+    global _cached_version_info
+    if _cached_version_info is None:
+        _cached_version_info = _get_version_info()
+    return _cached_version_info
+
+
 def load_cache() -> dict[str, PluginInfo]:
+    global _cached_plugins
+    if _cached_plugins is not None:
+        return _cached_plugins
     if not CACHE_PATH.exists():
-        return {}
+        _cached_plugins = {}
+        return _cached_plugins
     try:
         data = json.loads(CACHE_PATH.read_text())
         cached_version = data.get("_version", {})
-        current_version = _get_version_info()
-        if cached_version != current_version:
+        if cached_version != _cached_version():
             logger.info("Cache invalidated: version mismatch")
             CACHE_PATH.unlink(missing_ok=True)
-            return {}
+            _cached_plugins = {}
+            return _cached_plugins
         plugins: dict[str, PluginInfo] = {}
         for uri, port_dict in data.get("plugins", {}).items():
             ports = {sym: PortInfo(**info) for sym, info in port_dict.items()}
             plugins[uri] = PluginInfo(uri=uri, ports=ports)
         logger.info("Loaded %d plugins from cache", len(plugins))
-        return plugins
+        _cached_plugins = plugins
+        return _cached_plugins
     except Exception as exc:
         logger.warning("Cache read failed: %s", exc)
-        return {}
+        _cached_plugins = {}
+        return _cached_plugins
 
 
 def save_cache(plugins: dict[str, PluginInfo]) -> None:
     try:
         data = {
-            "_version": _get_version_info(),
+            "_version": _cached_version(),
             "plugins": {
                 uri: {sym: {
                     "symbol": p.symbol, "name": p.name,

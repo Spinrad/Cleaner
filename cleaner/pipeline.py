@@ -21,6 +21,7 @@ class PipelineResult:
         self.output_path: Optional[Path] = None
         self.report: AnalysisReport = {}
         self.measured_lufs: Optional[float] = None
+        self.output_lufs: Optional[float] = None
         self.applied_gain_db: float = 0.0
         self.input_metrics: dict = {}
         self.output_metrics: dict = {}
@@ -41,7 +42,8 @@ def _measure_file(wav_path: Path) -> dict:
             "total": int(y.size), "sr": int(sr), "channels": y.shape[1],
             "duration_s": round(y.shape[0] / sr, 1),
         }
-    except Exception:
+    except Exception as exc:
+        logger.warning("_measure_file failed for %s: %s", wav_path, exc)
         return {}
 
 
@@ -56,7 +58,8 @@ def _lsp_available() -> bool:
             if info is None or not info.ports:
                 return False
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("LSP availability check failed: %s", exc)
         return False
 
 
@@ -175,15 +178,13 @@ def _print_chain_summary(report, stages, use_lsp=False):
     if stages.get("saturation", True):
         i += 1
         if use_lsp:
-            import math
             glue = report.get('_glue', 0.15)
             intensity = report.get('_intensity', 0.5)
             eff = glue * (0.3 + intensity * 0.7)
-            drive_db = eff * 16.0
+            drive_db = eff * 12.0
             makeup_db = -drive_db * 0.4
-            _box_line(f"{i}. Saturation LSP (drive + hard-clip)", "cyan")
-            _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB  "
-                      f"hclip={min(1.0, eff*1.2):.2f}", "cyan")
+            _box_line(f"{i}. Saturation (drive+makeup, 4x oversample)", "cyan")
+            _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB", "cyan")
         else:
             _box_line(f"{i}. Tape Saturation (drive+makeup, 4x oversample)", "cyan")
             _box_line(f"   drive=+{report.get('sat_drive_db',1.2):.1f}dB  seuil={report.get('sat_threshold_linear',0.85):.2f}  makeup={report.get('sat_makeup_db',-0.7):.1f}dB", "cyan")
@@ -353,12 +354,6 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
             result.measured_lufs = measured
             final_output, gain_db = apply_lufs_gain(rendered_wav, output, target_lufs=target_lufs)
             result.applied_gain_db = gain_db
-            final_lufs = measured + gain_db
-            if abs(final_lufs - target_lufs) < 0.5:
-                click.echo(f"  [OK] LUFS: {measured:.1f} + {gain_db:+.1f} dB = {final_lufs:.1f} LUFS (cible {target_lufs})")
-            else:
-                click.secho(f"  [!] LUFS: {measured:.1f} + {gain_db:+.1f} dB = {final_lufs:.1f} LUFS", fg="yellow")
-                click.secho(f"      Cible {target_lufs} non atteinte (gain plafonne a {gain_db:+.1f} dB)", fg="yellow")
 
             # If gain pushed peaks above ceiling, re-apply limiter
             if gain_db > 0.5 and stages.get("limiter", True):
@@ -369,8 +364,24 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                     "-af", f"alimiter=limit={10.0**(ceiling/20.0):.4f}:attack=0.1:release=30:level=true",
                     "-c:a", "pcm_s24le", str(output),
                 ]
-                subprocess.run(limit_cmd, capture_output=True, timeout=timeout)
-                click.echo(f"  [OK] Limiteur reapplique post-LUFS (ceiling={ceiling} dBFS)")
+                proc = subprocess.run(limit_cmd, capture_output=True, timeout=timeout)
+                if proc.returncode != 0:
+                    tail = proc.stderr[-1500:] if len(proc.stderr) > 1500 else proc.stderr
+                    raise RuntimeError(f"Post-LUFS limiter failed (exit {proc.returncode}):\n{tail}")
+                if not output.exists():
+                    shutil.move(str(pre_limit), str(output))
+                    click.secho(f"  [!] Limiteur post-LUFS a echoue, fichier pre-limiteur restaure", fg="yellow")
+                else:
+                    click.echo(f"  [OK] Limiteur reapplique post-LUFS (ceiling={ceiling} dBFS)")
+
+            # Re-measure LUFS after re-limiter for accurate reporting
+            final_lufs = measure_lufs(final_output)
+            result.output_lufs = final_lufs
+            if abs(final_lufs - target_lufs) < 0.5:
+                click.echo(f"  [OK] LUFS final: {final_lufs:.1f} LUFS (cible {target_lufs})")
+            else:
+                click.secho(f"  [!] LUFS final: {final_lufs:.1f} LUFS", fg="yellow")
+                click.secho(f"      Cible {target_lufs} non atteinte (gain plafonne a {gain_db:+.1f} dB)", fg="yellow")
         else:
             click.echo("  [5/5] LUFS DESACTIVE -- copie directe")
             shutil.copy2(rendered_wav, output)

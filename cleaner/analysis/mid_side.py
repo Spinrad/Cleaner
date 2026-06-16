@@ -40,26 +40,31 @@ def compute_side_energy_ratio(left, right):
 def _design_bp(low, high, sr, order):
     nyq = sr/2; return scipy.signal.butter(order, [low/nyq, high/nyq], btype="band", output="sos")
 
-def analyse_cymbal_phase(left, right, sr=ANALYSIS_SR):
+def analyse_cymbal_phase(left, right, sr=ANALYSIS_SR, overall_rms_lin=None):
     try:
         sos = _design_bp(HF_LOW, HF_HIGH, sr, HF_ORDER)
         lf = scipy.signal.sosfiltfilt(sos, left)
         rf = scipy.signal.sosfiltfilt(sos, right)
-    except Exception:
+    except Exception as exc:
+        logger.warning("cymbal phase analysis failed: %s", exc)
         return {"hf_correlation": FALLBACK["hf_correlation"], "harshness_index": FALLBACK["harshness_index"]}
     hf_corr = compute_ms_correlation(lf, rf)
     energy_lin = float(np.sqrt(np.mean(lf**2 + rf**2)))
-    energy_db = 20 * np.log10(max(energy_lin, 1e-10))
     decorr = max(1.0 - hf_corr, 0.0)
-    harshness = round(decorr * np.log10(max(1 + energy_db + 60, 1.0)), 3)
+    if overall_rms_lin is not None and overall_rms_lin > 1e-10:
+        energy_ratio = min(energy_lin / overall_rms_lin, 1.0)
+    else:
+        energy_ratio = min(energy_lin * 100.0, 1.0)
+    harshness = round(decorr * energy_ratio, 3)
     del lf, rf; gc.collect()
     return {"hf_correlation": round(hf_corr, 3), "harshness_index": harshness}
 
 def analyse_mid_side(source_path: str) -> dict:
     y = load_stereo_audio(source_path)
     left, right = y[0, :], y[1, :]
+    overall_rms = float(np.sqrt(np.mean(left**2 + right**2)))
     corr = compute_ms_correlation(left, right)
     sr_ = compute_side_energy_ratio(left, right)
-    cym = analyse_cymbal_phase(left, right)
+    cym = analyse_cymbal_phase(left, right, overall_rms_lin=overall_rms)
     del y, left, right; gc.collect()
     return {"ms_correlation_avg": corr, "side_energy_ratio": sr_, **cym}

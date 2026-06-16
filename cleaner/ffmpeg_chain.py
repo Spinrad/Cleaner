@@ -161,10 +161,10 @@ def build_filtergraph(report: dict[str, Any], stages: dict[str, bool] | None = N
             f"volume={sat_makeup_db}dB"
         )
 
-    # Stage: Air (high-shelf brilliance at 8kHz)
+    # Stage: Air (Bell at 10 kHz, Q=2.0)
     air_db = report.get("_air_db", 1.5)
     if on("air"):
-        tail += f",treble=frequency=8000:width_type=q:width=0.7:gain={air_db}"
+        tail += f",equalizer=frequency=10000:width_type=q:width=2.0:gain={air_db}"
 
     # Stage: Width (stereo widening via stereotools)
     w = report.get("_width", 0.0)

@@ -10,6 +10,7 @@ from cleaner.pipeline import run_pipeline
 logging.basicConfig(level=logging.WARNING,
                     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
                     datefmt="%H:%M:%S")
+logger = logging.getLogger(__name__)
 
 # ── Mastering presets ────────────────────────────────────────────────
 
@@ -189,7 +190,8 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
                 src = ctx.get_parameter_source(key)
                 if src is None or src.name == "DEFAULT":
                     vals[key] = p[key]
-            except Exception:
+            except Exception as exc:
+                logger.warning("get_parameter_source failed for %s: %s", key, exc)
                 vals[key] = p[key]
         glue, air, width, bus_comp, target_lufs = (
             vals["glue"], vals["air"], vals["width"],
@@ -200,7 +202,7 @@ def main(source, output, keep_temp, dry_run, target_lufs, preset, ceiling,
         "deharsher": deharsher, "notches": notches,
         "saturation": saturation, "limiter": limiter,
         "lufs": lufs, "hp35": hp35, "hp150": hp150,
-        "glue": glue > 0.01, "air": air > 0.01,
+        "glue": glue > 0.01, "air": abs(air) > 0.01,
         "width": abs(width) > 0.001, "bus_comp": bus_comp > 0.01,
         "intensity": True,
     }

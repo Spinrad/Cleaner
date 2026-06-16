@@ -24,10 +24,15 @@ def detect_clipping(source_path: str) -> dict:
         return {"is_heavily_clipped": False, "clip_ratio": 0.0, "max_consecutive_clips": 0, "total_clipped_samples": 0, "total_samples": 0}
     total = y.size
     clipped = np.sum(np.abs(y) >= clip_amp)
-    max_cons = 0; cur = 0
-    for v in np.abs(y).flatten():
-        if v >= clip_amp: cur += 1; max_cons = max(max_cons, cur)
-        else: cur = 0
+    abs_flat = np.abs(y).flatten()
+    clipped_mask = abs_flat >= clip_amp
+    if np.any(clipped_mask):
+        edges = np.diff(np.concatenate(([0], clipped_mask.astype(np.int8), [0])))
+        starts = np.where(edges == 1)[0]
+        ends = np.where(edges == -1)[0]
+        max_cons = int(np.max(ends - starts)) if len(starts) > 0 else 0
+    else:
+        max_cons = 0
     ratio = float(clipped) / total if total > 0 else 0.0
     is_heavy = ratio > CLIP_RATIO
     del y; gc.collect()
