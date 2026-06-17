@@ -13,25 +13,16 @@ import logging
 import numpy as np
 import scipy.signal
 import soundfile as sf
+from cleaner.constants import (
+    ANALYSIS_SR_LO as ANALYSIS_SR,
+    ANALYSIS_DURATION_S as MAX_DURATION_S,
+    N_FFT, HOP_LENGTH,
+    ROOM_MODE_LOW_HZ, ROOM_MODE_HIGH_HZ,
+    MAX_ROOM_MODES as ROOM_MODE_COUNT,
+)
+from cleaner.constants import NOTCH_DEFAULT_HZ, NOTCH_DEFAULT_Q, NOTCH_DEFAULT_GAIN_DB
 
 logger = logging.getLogger(__name__)
-
-ANALYSIS_SR: int = 16000
-MAX_DURATION_S: float = 60.0
-N_FFT: int = 8192
-HOP_LENGTH: int = 1024
-ROOM_MODE_LOW_HZ: float = 100.0
-ROOM_MODE_HIGH_HZ: float = 800.0
-ROOM_MODE_COUNT: int = 3
-
-FALLBACK = {
-    "room_modes_hz": [300.0, 450.0, 600.0],
-    "room_mode_qs": [5.0, 5.0, 5.0],
-    "room_mode_gains_db": [3.0, 3.0, 3.0],
-    "harshness_band_energy_db": -20.0,
-    "spectral_centroid_hz": 2000.0,
-    "low_mid_energy_db": -18.0,
-}
 
 
 def _resample(y: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
@@ -85,12 +76,12 @@ def detect_room_modes_by_persistence(freqs: np.ndarray, S: np.ndarray):
     """Top 3 persistent peaks in [100,800] Hz."""
     bf, scores = compute_stationarity_scores(S, freqs)
     if len(bf) < 5 or float(np.max(scores)) < 0.1:
-        return FALLBACK["room_modes_hz"][:3], FALLBACK["room_mode_qs"][:3], FALLBACK["room_mode_gains_db"][:3]
+        return list(NOTCH_DEFAULT_HZ[:3]), list(NOTCH_DEFAULT_Q[:3]), list(NOTCH_DEFAULT_GAIN_DB[:3])
     res = float(bf[1] - bf[0]) if len(bf) > 1 else 2.0
     dist = max(3, int(15.0 / res))
     peaks, props = scipy.signal.find_peaks(scores, prominence=0.05 * (float(np.max(scores)) - float(np.min(scores)) + 1e-10), distance=dist)
     if len(peaks) == 0:
-        return FALLBACK["room_modes_hz"][:3], FALLBACK["room_mode_qs"][:3], FALLBACK["room_mode_gains_db"][:3]
+        return list(NOTCH_DEFAULT_HZ[:3]), list(NOTCH_DEFAULT_Q[:3]), list(NOTCH_DEFAULT_GAIN_DB[:3])
     prom = props.get("prominences", np.ones(len(peaks)))
     top = peaks[np.argsort(prom)[::-1][:ROOM_MODE_COUNT]]
     avg_mag = np.mean(S, axis=1)
@@ -117,9 +108,9 @@ def detect_room_modes_by_persistence(freqs: np.ndarray, S: np.ndarray):
         gs.append(round(prominence_db, 1))
     while len(fh) < ROOM_MODE_COUNT:
         i = len(fh)
-        fh.append(FALLBACK["room_modes_hz"][i])
-        qs.append(FALLBACK["room_mode_qs"][i])
-        gs.append(FALLBACK["room_mode_gains_db"][i])
+        fh.append(NOTCH_DEFAULT_HZ[i])
+        qs.append(NOTCH_DEFAULT_Q[i])
+        gs.append(NOTCH_DEFAULT_GAIN_DB[i])
     return fh, qs, gs
 
 

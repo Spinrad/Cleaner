@@ -10,9 +10,23 @@ ANALYSIS_SR = 48000       # Full-band rendering sample rate
 ANALYSIS_SR_LO = 16000    # Downsampled analysis rate (spectral/dynamics)
 ANALYSIS_DURATION_S = 60.0  # Analysis window
 N_FFT = 8192              # FFT size for spectral analysis
+HOP_LENGTH = 1024          # FFT hop size for spectral analysis
 ROOM_MODE_LOW_HZ = 100.0  # Minimum room mode frequency (spectrum.py)
 ROOM_MODE_HIGH_HZ = 800.0  # Maximum room mode frequency (spectrum.py)
 MAX_ROOM_MODES = 3        # Number of room mode bands
+
+# ── Analysis fallbacks (used internally by sub-modules) ──────────────
+
+PEAK_DB_DEFAULT = -3.0
+RMS_DB_DEFAULT = -15.0
+CREST_DB_DEFAULT = 12.0
+TRANSIENT_ATTACK_MS_DEFAULT = 10.0
+TRANSIENT_CREST_LOCAL_DB_DEFAULT = 12.0
+AGC_RECOVERY_MS_DEFAULT = 80.0
+MS_CORR_AVG_DEFAULT = 0.5
+SIDE_ENERGY_RATIO_DEFAULT = 0.3
+HF_CORRELATION_DEFAULT = 0.4
+HARSHNESS_INDEX_DEFAULT = 0.0
 
 # ── Saturation ────────────────────────────────────────────────────────
 

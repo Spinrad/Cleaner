@@ -25,7 +25,7 @@ class PipelineResult:
     def __init__(self):
         self.success = False
         self.output_path: Optional[Path] = None
-        self.report: AnalysisReport = {}
+        self.report: AnalysisReport | None = None
         self.measured_lufs: Optional[float] = None
         self.output_lufs: Optional[float] = None
         self.applied_gain_db: float = 0.0

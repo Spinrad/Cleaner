@@ -6,8 +6,10 @@ import numpy as np, scipy.signal, soundfile as sf
 
 logger = logging.getLogger(__name__)
 from cleaner.constants import HF_CORR_LOW_HZ, HF_CORR_HIGH_HZ, HF_CORR_ORDER
+from cleaner.constants import (
+    MS_CORR_AVG_DEFAULT, HARSHNESS_INDEX_DEFAULT, HF_CORRELATION_DEFAULT,
+)
 ANALYSIS_SR = 48000; MAX_DURATION_S = 60.0
-FALLBACK = {"ms_correlation_avg": 0.5, "side_energy_ratio": 0.3, "hf_correlation": 0.4, "harshness_index": 0.0}
 
 def _resample(y, orig_sr, target_sr):
     if orig_sr == target_sr: return y
@@ -29,7 +31,7 @@ def compute_ms_correlation(left, right, window=4096, hop=2048):
         if np.std(l) < 1e-8 or np.std(r) < 1e-8: continue
         c = np.corrcoef(l, r)[0, 1]
         if not np.isnan(c): corrs.append(float(c))
-    return round(float(np.mean(corrs)), 3) if corrs else FALLBACK["ms_correlation_avg"]
+    return round(float(np.mean(corrs)), 3) if corrs else MS_CORR_AVG_DEFAULT
 
 def compute_side_energy_ratio(left, right):
     side = (left - right) / 2
@@ -47,7 +49,7 @@ def analyse_cymbal_phase(left, right, sr=ANALYSIS_SR, overall_rms_lin=None):
         rf = scipy.signal.sosfiltfilt(sos, right)
     except Exception as exc:
         logger.warning("cymbal phase analysis failed: %s", exc)
-        return {"hf_correlation": FALLBACK["hf_correlation"], "harshness_index": FALLBACK["harshness_index"]}
+        return {"hf_correlation": HF_CORRELATION_DEFAULT, "harshness_index": HARSHNESS_INDEX_DEFAULT}
     hf_corr = compute_ms_correlation(lf, rf)
     energy_lin = float(np.sqrt(np.mean(lf**2 + rf**2)))
     decorr = max(1.0 - hf_corr, 0.0)

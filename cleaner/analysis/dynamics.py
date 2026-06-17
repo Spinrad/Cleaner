@@ -3,11 +3,14 @@
 from __future__ import annotations
 import gc, logging
 import numpy as np, scipy.signal, soundfile as sf
+from cleaner.constants import ANALYSIS_SR_LO as ANALYSIS_SR, ANALYSIS_DURATION_S as MAX_DURATION_S
+from cleaner.constants import (
+    TRANSIENT_CREST_LOCAL_DB_DEFAULT,
+    AGC_RECOVERY_MS_DEFAULT,
+    TRANSIENT_ATTACK_MS_DEFAULT,
+)
 
 logger = logging.getLogger(__name__)
-ANALYSIS_SR = 16000
-MAX_DURATION_S = 60.0
-FALLBACK = {"peak_db": -3.0, "rms_db": -15.0, "crest_factor_db": 12.0, "transient_attack_ms": 10.0, "transient_crest_local_db": 12.0, "agc_recovery_ms": 80.0}
 
 def _resample(y, orig_sr, target_sr):
     if orig_sr == target_sr: return y.astype(np.float32)
@@ -60,7 +63,7 @@ def measure_attack_times(y, sr, onset_times_s, max_attack_ms=100.0):
     return times
 
 def compute_local_crest_factor(y, sr, onset_times_s, window_ms=50.0):
-    if len(onset_times_s) == 0: return FALLBACK["transient_crest_local_db"]
+    if len(onset_times_s) == 0: return TRANSIENT_CREST_LOCAL_DB_DEFAULT
     half = int(window_ms/1000*sr)//2
     crests = []
     for os in onset_times_s:
@@ -69,10 +72,10 @@ def compute_local_crest_factor(y, sr, onset_times_s, window_ms=50.0):
         if len(seg) < 10: continue
         pk = float(np.max(np.abs(seg))); rm = float(np.sqrt(np.mean(seg**2)))
         if rm > 1e-10: crests.append(20*np.log10(pk/rm))
-    return round(float(np.median(crests)), 2) if crests else FALLBACK["transient_crest_local_db"]
+    return round(float(np.median(crests)), 2) if crests else TRANSIENT_CREST_LOCAL_DB_DEFAULT
 
 def measure_agc_recovery(y, sr, onset_times_s, ambient_rms):
-    if len(onset_times_s) == 0: return FALLBACK["agc_recovery_ms"]
+    if len(onset_times_s) == 0: return AGC_RECOVERY_MS_DEFAULT
     rec_win = int(0.5 * sr); rms_win = int(0.01 * sr) or 4
     thresh = 1.5 * ambient_rms
     times = []
@@ -88,7 +91,7 @@ def measure_agc_recovery(y, sr, onset_times_s, ambient_rms):
         if rec_idx is not None:
             ms = (rec_idx-pk_idx)/sr*1000
             if 1.0 < ms < 500.0: times.append(ms)
-    return round(float(np.median(times)), 1) if times else FALLBACK["agc_recovery_ms"]
+    return round(float(np.median(times)), 1) if times else AGC_RECOVERY_MS_DEFAULT
 
 def analyse_dynamics(source_path: str) -> dict:
     y = load_mono_audio(source_path)
@@ -96,7 +99,7 @@ def analyse_dynamics(source_path: str) -> dict:
     amb = float(np.sqrt(np.mean(y**2)))
     onsets = detect_onsets(y); attacks = measure_attack_times(y, ANALYSIS_SR, onsets)
     local_cr = compute_local_crest_factor(y, ANALYSIS_SR, onsets)
-    trans_atk = round(float(np.median(attacks)), 1) if attacks else FALLBACK["transient_attack_ms"]
+    trans_atk = round(float(np.median(attacks)), 1) if attacks else TRANSIENT_ATTACK_MS_DEFAULT
     agc = measure_agc_recovery(y, ANALYSIS_SR, onsets, amb)
     if cr < 6.0: logger.warning("Low Crest Factor (%.1f dB)", cr)
     del y; gc.collect()
