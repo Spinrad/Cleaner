@@ -165,7 +165,13 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     chain += ",stereotools=mode=lr>ms[ms]"
     
     # ── Sidechain ducking (native) ──
-    if on("ducking"):
+    if on("ducking") and derived:
+        comp_thresh = derived.comp_threshold_linear
+        comp_ratio = derived.comp_ratio
+        comp_attack = derived.comp_attack_ms
+        comp_release = derived.comp_release_ms
+        hp150_on = on("hp150")
+    elif on("ducking"):
         comp_thresh = report.get("comp_threshold_linear", 0.05)
         comp_ratio = report.get("comp_ratio", 4)
         comp_attack = report.get("comp_attack_ms", 2.0)
@@ -199,7 +205,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
         notch_gain = 0.0
         if on("notches"):
             for j in (1, 2, 3):
-                g = report.get(f"notch_gain_{j}", 0.0)
+                g = getattr(derived, f"notch_gain_{j}", 0.0) if derived else report.get(f"notch_gain_{j}", 0.0)
                 if g < -0.5:
                     notch_gain += g
         air_gain = 0.0  # Bell at 10 kHz has negligible RMS impact
@@ -221,12 +227,12 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     # ── Stage: Bus Compressor (LSP) ──
     if on("bus_comp"):
         tail += "," + _clamped_lv2_node(COMPRESSOR_URI, compute_compressor_lsp_params, derived, tracker)
-        bus = report.get("_bus_comp", 0.0)
+        bus = settings.bus_comp if settings else report.get("_bus_comp", 0.0)
         comp_gain = -bus * 2.0  # moderate compression gain reduction
         tracker.commit("compressor", comp_gain, "bus glue")
     
     # ── Stage: Width (native stereotools) ──
-    w = report.get("_width", 0.0)
+    w = settings.width if settings else report.get("_width", 0.0)
     if on("width"):
         tail += f",stereotools=mode=lr>lr:base={w}:slev=1:mlev=1"
     

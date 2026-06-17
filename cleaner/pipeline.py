@@ -1,7 +1,7 @@
 """Pipeline orchestrator — hybrid ffmpeg + LSP/LV2, before/after metrics, rich output."""
 
 from __future__ import annotations
-import logging, shutil, subprocess, uuid, copy
+import logging, shutil, subprocess, uuid
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -326,67 +326,21 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
             notch_multiplier=notch_intensity, tame_cymbals=tame_cymbals,
             clean_mediums=clean_mediums,
         )
-        report = copy.deepcopy(analysis.to_dict())
-        # Inject settings into report for downstream readers (backward compat).
-        # Future: readers should accept MasteringSettings directly.
-        report["_ceiling_db"] = settings.ceiling_db
-        report["_target_lufs"] = settings.target_lufs
-        report["_notch_multiplier"] = settings.notch_multiplier
-        report["_tame_cymbals"] = settings.tame_cymbals
-        report["_glue"] = settings.glue
-        report["_air"] = settings.air
-        report["_width"] = settings.width
-        report["_bus_comp"] = settings.bus_comp
-        report["_intensity"] = settings.intensity
-        report["_clean_mediums"] = settings.clean_mediums
-
-        # Compute all DSP params once — new typed path
         derived = compute_derived_params(analysis, settings)
-        # Backward compat: inject derived values into report dict for legacy builders
-        report.update({k: v for k, v in derived.__dict__.items() if not k.startswith('_')})
-        report["expander_threshold_linear"] = derived.expander_threshold_linear
-        report["expander_ratio"] = derived.expander_ratio
-        report["expander_range_linear"] = derived.expander_range_linear
-        report["expander_attack_ms"] = derived.expander_attack_ms
-        report["expander_release_ms"] = derived.expander_release_ms
-        report["comp_threshold_linear"] = derived.comp_threshold_linear
-        report["comp_ratio"] = derived.comp_ratio
-        report["comp_attack_ms"] = derived.comp_attack_ms
-        report["comp_release_ms"] = derived.comp_release_ms
-        report["sat_drive_db"] = derived.sat_drive_db
-        report["sat_makeup_db"] = derived.sat_makeup_db
-        report["sat_threshold_linear"] = derived.sat_threshold_linear
-        report["sat_glue"] = derived.sat_glue
-        report["_air_db"] = derived.air_db
-        report["bus_threshold_linear"] = derived.bus_threshold_linear
-        report["bus_mix"] = derived.bus_mix
-        report["bus_ratio"] = derived.bus_ratio
-        report["bus_attack_ms"] = derived.bus_attack_ms
-        report["bus_release_ms"] = derived.bus_release_ms
-        report["limiter_ceiling_linear"] = derived.limiter_ceiling_linear
-        report["deharsher_threshold_linear"] = derived.deharsher_threshold_linear
-        report["deharsher_filter_ratio"] = derived.deharsher_filter_ratio
-        report["deharsher_attack_ms"] = derived.deharsher_attack_ms
-        report["deharsher_release_ms"] = derived.deharsher_release_ms
-        report["deharsher_display_threshold"] = derived.deharsher_display_threshold
-        for j in 1, 2, 3:
-            report[f"notch_freq_{j}"] = getattr(derived, f"notch_freq_{j}")
-            report[f"notch_q_{j}"] = getattr(derived, f"notch_q_{j}")
-            report[f"notch_gain_{j}"] = getattr(derived, f"notch_gain_{j}")
 
         # 4. Filtergraph
         click.echo("  [3/5] Construction de la chaine DSP...")
         if use_lsp:
             click.secho("  Mode: LSP/LV2 (plugins detectes)", fg="cyan")
-            graph = build_lsp_filtergraph(report, stages, derived=derived, settings=settings)
+            graph = build_lsp_filtergraph(analysis.to_dict(), stages, derived=derived, settings=settings)
         else:
             if not force_native and not _lsp_available():
                 click.secho("  [!] LSP plugins non trouves — fallback natif.", fg="yellow")
                 click.secho("  Utilisez --force-native pour supprimer cet avertissement.", fg="yellow")
             else:
                 click.secho("  Mode: ffmpeg natif", fg="cyan")
-            graph = build_filtergraph(report, stages, derived=derived)
-        _print_chain_summary(report, stages, use_lsp, derived=derived, settings=settings)
+            graph = build_filtergraph(stages=stages, derived=derived)
+        _print_chain_summary(None, stages, use_lsp, derived=derived, settings=settings)
 
         if dry_run:
             click.echo(f"  Filtergraph ({len(graph)} chars):")

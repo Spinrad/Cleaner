@@ -20,18 +20,12 @@ from typing import Any
 def build_filtergraph(report: dict[str, Any] | None = None,
                       stages: dict[str, bool] | None = None,
                       derived=None) -> str:
-    """
-    Build the complete ffmpeg filter_complex string.
+    """Build the complete ffmpeg filter_complex string.
 
     Args:
-        report: AnalysisReport from global_analysis.
+        report: Legacy AnalysisReport dict (optional, prefer derived).
         stages: Dict of stage_name → enabled. If None, all enabled.
-                Valid keys: expander, ducking, deharsher, notches,
-                            saturation, limiter, lufs (ignored here,
-                            handled by pipeline).
-
-    Returns:
-        A filter_complex string ready for ffmpeg -filter_complex.
+        derived: DerivedParams with pre-computed values (preferred).
     """
     if stages is None:
         stages = {}
@@ -42,7 +36,7 @@ def build_filtergraph(report: dict[str, Any] | None = None,
     def on(name: str) -> bool:
         return stages.get(name, _defaults_off.get(name, True))
 
-    # ── Parameters ──────────────────────────────────────────────
+    # ── Parameters (derived preferred, report fallback) ─────────────
     d = derived
     r = report or {}
 

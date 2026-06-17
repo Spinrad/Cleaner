@@ -10,155 +10,17 @@ from cleaner.analysis.mid_side import analyse_mid_side
 
 from cleaner.lv2_params import db_to_linear_gain
 from cleaner.constants import (
-    SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, SAT_THRESHOLD_BASE, SAT_THRESHOLD_SLOPE,
-    SAT_CLIP_PENALTY,
-    EXP_THRESH_DELTA_DB, EXP_RATIO_BASE, EXP_RATIO_SLOPE, EXP_RATIO_MIN, EXP_RATIO_MAX,
-    EXP_ATTACK_FRAC, EXP_RELEASE_FRAC, EXP_CLIP_RATIO_FACTOR,
-    NOTCH_PROM_DISABLE_DB, NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MIN_DB, NOTCH_DEPTH_MAX_DB,
-    NOTCH_GAIN_FLOOR_DB, NOTCH_Q_MIN, NOTCH_Q_MAX, NOTCH_DEFAULT_HZ, NOTCH_DEFAULT_Q,
-    NOTCH_DEFAULT_GAIN_DB,
-    AIR_FREQ_HZ, AIR_Q, CLEAN_FREQ_HZ, CLEAN_Q,
-    COMP_DUCK_THRESH_OFFSET_DB, COMP_DUCK_RATIO, COMP_DUCK_ATTACK_MS,
-    COMP_DUCK_RELEASE_FACTOR, COMP_DUCK_RELEASE_MIN_MS,
+    AIR_FREQ_HZ, AIR_Q, CLEAN_FREQ_HZ, CLEAN_Q, MAX_ROOM_MODES,
     BUS_RATIO, BUS_ATTACK_MS, BUS_RELEASE_MS, BUS_THRESH_CREST_FACTOR, BUS_THRESH_OFFSET,
     LIMITER_LOOKAHEAD_S, LIMITER_ATTACK_S, LIMITER_RELEASE_S, LIMITER_OVERSAMPLING,
-    INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE,
-    DEHARSH_THRESH_MIN, DEHARSH_THRESH_MAX, DEHARSH_CREST_FACTOR,
     DEHARSH_BAND_LOW_HZ, DEHARSH_BAND_HIGH_HZ,
-    CLIP_PENALTY_COMP, CLIP_PENALTY_EXP_RATIO, CLIP_PENALTY_EXP_RANGE, CLIP_PENALTY_SAT,
-    MAX_ROOM_MODES,
 )
 
 logger = logging.getLogger(__name__)
 
-# Backward compat alias — being phased out in favor of cleaner.types.AnalysisReport.
 from cleaner.types import AnalysisReport as _AnalysisReportDataclass
 AnalysisReport = _AnalysisReportDataclass
 from cleaner.types import DerivedParams, MasteringSettings
-
-
-def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
-    # Convert to mutable dict for legacy mutation (being phased out).
-    report = report.to_dict() if hasattr(report, 'to_dict') else dict(report)
-    crest = report.get("crest_factor_db", 12.0)
-    rms = report.get("rms_db", -15.0)
-    attack_ms = report.get("transient_attack_ms", 10.0)
-    agc_rec = report.get("agc_recovery_ms", 80.0)
-
-    # --- Expander (agate upward) ---
-    # Must be extremely gentle — only nudge transients, never saturate.
-    # Albini philosophy: respect dynamics, don't add artificial punch.
-    peak_db = report.get("peak_db", -3.0)
-    # Threshold very close to peak — only the loudest few dB get expanded
-    exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
-    report["expander_threshold_linear"] = round(
-        10.0 ** (exp_thresh_db / 20.0), 4
-    )
-    # Very gentle ratio: 1.1-1.5
-    report["expander_ratio"] = round(max(EXP_RATIO_MIN, min(EXP_RATIO_MAX, EXP_RATIO_BASE - crest * EXP_RATIO_SLOPE)), 1)
-    # Fast attack to catch transients
-    report["expander_attack_ms"] = round(max(min(attack_ms * EXP_ATTACK_FRAC, 10.0), 1.0), 1)
-    # Quick release to avoid pumping
-    report["expander_release_ms"] = round(max(min(agc_rec * EXP_RELEASE_FRAC, 50.0), 15.0), 1)
-    # Range: more expansion when signal is compressed (low crest)
-    # 0.4 when crest<10 (AGC probable), 0.15 when crest>14 (dynamic), scaled by intensity
-    intensity = report.get("_intensity", 0.5)
-    if crest < 8:
-        expander_range = 0.45 * intensity
-    elif crest < 10:
-        expander_range = 0.35 * intensity
-    elif crest < 14:
-        expander_range = 0.20 * intensity
-    else:
-        expander_range = 0.10 * intensity
-    report["expander_range_linear"] = round(max(expander_range, 0.05), 2)
-
-    # --- Sidechain compressor ---
-    # Sidechain ducking threshold: only trigger on LOUD transients (kick/snare),
-    # NOT on normal program material. Side channel carries spatial/air frequencies.
-    comp_thresh_db = rms + COMP_DUCK_THRESH_OFFSET_DB  # trigger when Mid exceeds RMS + 6dB
-    report["comp_threshold_linear"] = round(10.0 ** (comp_thresh_db / 20.0), 4)
-    report["comp_release_ms"] = round(max(agc_rec * COMP_DUCK_RELEASE_FACTOR, COMP_DUCK_RELEASE_MIN_MS), 1)
-    report["comp_ratio"] = COMP_DUCK_RATIO
-    report["comp_attack_ms"] = COMP_DUCK_ATTACK_MS
-
-    # --- De-harsher (adynamicequalizer) ---
-    deharsh_linear = max(DEHARSH_THRESH_MIN, min(DEHARSH_THRESH_MAX, crest * DEHARSH_CREST_FACTOR))
-    report["deharsher_threshold_linear"] = round(deharsh_linear, 1)
-    # Gentler ratio: 1.5-3.0 (was 2.0-5.0)
-    report["deharsher_filter_ratio"] = round(min(1.5 + crest * 0.06, 3.0), 1)
-    report["deharsher_attack_ms"] = round(max(min(attack_ms * 0.3, 8.0), 2.0), 1)
-    report["deharsher_release_ms"] = round(max(attack_ms * 2.5, 40.0), 1)
-    # Apply tame_cymbals delta
-    tame_delta = report.get("_tame_cymbals", 0.0)
-    report["deharsher_threshold_linear"] = round(
-        max(0.5, report["deharsher_threshold_linear"] + tame_delta * 0.5), 1
-    )
-    report["deharsher_display_threshold"] = round(deharsh_linear, 1)
-
-    # --- Limiter ---
-    ceiling = report.get("_ceiling_db", -1.1)
-    report["limiter_ceiling_linear"] = round(10.0 ** (ceiling / 20.0), 4)
-
-    # --- Saturation (drive + makeup) ---
-    glue = report.get("_glue", 0.15)
-    intensity = report.get("_intensity", 0.5)
-    eff_glue = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
-    report["sat_drive_db"] = round(eff_glue * SAT_DRIVE_MULTIPLIER, 1)
-    report["sat_threshold_linear"] = round(SAT_THRESHOLD_BASE - eff_glue * SAT_THRESHOLD_SLOPE, 3)
-    report["sat_makeup_db"] = round(-eff_glue * SAT_DRIVE_MULTIPLIER * SAT_MAKEUP_RATIO, 1)
-    report["sat_glue"] = glue
-    report["sat_softclip_type"] = 0
-
-    # --- Mastering air & width ---
-    report["_air_db"] = report.get("_air", 0.0)
-    report["_width"] = report.get("_width", 0.0)
-
-    # --- Bus compressor (SSL-style glue) ---
-    bus = report.get("_bus_comp", 0.0)
-    # Threshold: compress the body, not the transients
-    bus_thresh_db = rms - crest * BUS_THRESH_CREST_FACTOR + (1.0 - bus) * BUS_THRESH_OFFSET
-    report["bus_threshold_linear"] = round(10.0 ** (bus_thresh_db / 20.0), 4)
-    report["bus_mix"] = round(bus, 2)  # parallel compression
-    report["bus_ratio"] = BUS_RATIO  # SSL classic
-    report["bus_attack_ms"] = BUS_ATTACK_MS  # slow, lets transients through
-    report["bus_release_ms"] = BUS_RELEASE_MS  # smooth
-
-    # --- Notches ---
-    modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
-    while len(modes_hz) < MAX_ROOM_MODES: modes_hz.append(450)
-    modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
-    while len(modes_q) < MAX_ROOM_MODES: modes_q.append(5)
-    prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
-    while len(prominences) < MAX_ROOM_MODES: prominences.append(3)
-    mult = report.get("_notch_multiplier", 1.0)
-    intensity = report.get("_intensity", 0.5)
-    for i in range(MAX_ROOM_MODES):
-        # Wider Q: clamp to [3, 10] for musically useful bandwidth
-        q = min(max(modes_q[i], NOTCH_Q_MIN), NOTCH_Q_MAX)
-        prom = abs(prominences[i])
-        # Skip if prominence < 3 dB (not a real mode, just spectral noise)
-        if prom < NOTCH_PROM_DISABLE_DB:
-            g = 0.0
-        else:
-            # Depth proportional to prominence: 0.5× prominence, bounded [2, 9] dB
-            depth = min(prom * NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MAX_DB)
-            depth = max(depth, NOTCH_DEPTH_MIN_DB)
-            g = -(depth * mult * intensity)
-        g = max(g, NOTCH_GAIN_FLOOR_DB)  # hard floor
-        report[f"notch_freq_{i+1}"] = round(modes_hz[i], 1)
-        report[f"notch_q_{i+1}"] = round(q, 1)
-        report[f"notch_gain_{i+1}"] = round(g, 1)
-
-    # --- Clipping penalty ---
-    if report.get("is_heavily_clipped", False):
-        report["comp_threshold_linear"] = round(report["comp_threshold_linear"] * CLIP_PENALTY_COMP, 4)
-        report["expander_ratio"] = round(max(report["expander_ratio"] * CLIP_PENALTY_EXP_RATIO, EXP_RATIO_MIN), 1)
-        report["expander_range_linear"] = CLIP_PENALTY_EXP_RANGE
-        report["sat_threshold_linear"] = min(report["sat_threshold_linear"] + CLIP_PENALTY_SAT, 0.99)
-        logger.warning("Clipping penalty applied: expander/saturation reduced")
-
-    return report
 
 
 def get_global_analysis(source_path: str) -> AnalysisReport:
