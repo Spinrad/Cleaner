@@ -97,17 +97,17 @@ def compute_eq_lsp_params(derived: DerivedParams,
             params[f"ft_{i}"] = 1.0
             params[f"fm_{i}"] = 0.0
             params[f"f_{i}"] = round(f0, 1)
-            params[f"w_{i}"] = round(q_val / 2.5, 1)
+            params[f"w_{i}"] = 4.0
             params[f"q_{i}"] = round(q_val, 1)
             params[f"g_{i}"] = round(db_to_linear_gain(g_db), 4)
 
-    # Air band
+    # Air band (band 3): Bell at 10 kHz
     air_db_val = derived.air_db
     params["s_3"] = 0.0
     if abs(air_db_val) > 0.01:
         params["ft_3"] = 1.0; params["fm_3"] = 0.0
         params["f_3"] = AIR_FREQ_HZ
-        params["w_3"] = round(AIR_Q / 2.5, 1)
+        params["w_3"] = 4.0
         params["q_3"] = AIR_Q
         params["g_3"] = round(db_to_linear_gain(air_db_val), 4)
     else:
@@ -115,7 +115,7 @@ def compute_eq_lsp_params(derived: DerivedParams,
         params["f_3"] = AIR_FREQ_HZ; params["w_3"] = 4.0
         params["q_3"] = 0.0; params["g_3"] = 1.0
 
-    # Clean-mediums
+    # Clean-mediums band (band 4): Bell at 600 Hz
     clean_db = settings.clean_mediums
     params["s_4"] = 0.0
     if clean_db < -0.01:
