@@ -3,10 +3,10 @@
 from __future__ import annotations
 import gc, logging
 import numpy as np, soundfile as sf
+from cleaner.constants import CLIP_DBFS, CLIP_RATIO_THRESHOLD as CLIP_RATIO
 
 logger = logging.getLogger(__name__)
 ANALYSIS_SR = 48000; MAX_DURATION_S = 60.0
-CLIP_DBFS = -0.1; CLIP_RATIO = 0.015
 
 def detect_clipping(source_path: str) -> dict:
     clip_amp = 10.0 ** (CLIP_DBFS / 20.0)

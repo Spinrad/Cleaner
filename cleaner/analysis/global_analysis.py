@@ -166,31 +166,20 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
     data: dict[str, Any] = {}
     failures = []
 
-    for name, func, fb in [
-        ("spectral", analyse_spectrum, {
-            "room_modes_hz": [300, 450, 600], "room_mode_qs": [5, 5, 5],
-            "room_mode_gains_db": [3, 3, 3], "harshness_band_energy_db": -20.0,
-            "spectral_centroid_hz": 2000.0, "low_mid_energy_db": -18.0,
-        }),
-        ("clipping", detect_clipping, {"is_heavily_clipped": False, "clip_ratio": 0.0}),
-        ("dynamics", analyse_dynamics, {
-            "peak_db": -3.0, "rms_db": -15.0, "crest_factor_db": 12.0,
-            "transient_attack_ms": 10.0, "transient_crest_local_db": 12.0,
-            "agc_recovery_ms": 80.0,
-        }),
-        ("mid_side", analyse_mid_side, {
-            "ms_correlation_avg": 0.5, "side_energy_ratio": 0.3,
-            "hf_correlation": 0.4, "harshness_index": 0.0,
-        }),
-    ]:
+    modules = [
+        ("spectral", analyse_spectrum),
+        ("clipping", detect_clipping),
+        ("dynamics", analyse_dynamics),
+        ("mid_side", analyse_mid_side),
+    ]
+    for name, func in modules:
         try:
             data.update(func(source_path))
             logger.info("[OK] %s", name)
         except Exception as exc:
             failures.append(f"{name}: {exc}")
             logger.warning("[FAIL] %s: %s", name, exc)
-            for k, v in fb.items():
-                data.setdefault(k, v)
+            # Fields not produced by failed module get AnalysisReport defaults
 
     if len(failures) >= 4:
         raise ValueError("All 4 modules failed.\n" + "\n".join(failures))

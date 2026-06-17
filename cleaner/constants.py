@@ -10,8 +10,8 @@ ANALYSIS_SR = 48000       # Full-band rendering sample rate
 ANALYSIS_SR_LO = 16000    # Downsampled analysis rate (spectral/dynamics)
 ANALYSIS_DURATION_S = 60.0  # Analysis window
 N_FFT = 8192              # FFT size for spectral analysis
-ROOM_MODE_LOW_HZ = 80.0   # Minimum room mode frequency
-ROOM_MODE_HIGH_HZ = 500.0 # Maximum room mode frequency
+ROOM_MODE_LOW_HZ = 100.0  # Minimum room mode frequency (spectrum.py)
+ROOM_MODE_HIGH_HZ = 800.0  # Maximum room mode frequency (spectrum.py)
 MAX_ROOM_MODES = 3        # Number of room mode bands
 
 # ── Saturation ────────────────────────────────────────────────────────
@@ -85,12 +85,17 @@ CEILING_DEFAULT_DBFS = -1.1
 
 # ── De-harsher ────────────────────────────────────────────────────────
 
-DEHARSH_LOW_HZ = 5000.0
-DEHARSH_HIGH_HZ = 10000.0
-DEHARSH_ORDER = 4
+DEHARSH_BAND_LOW_HZ = 2500.0    # Actual de-harsher target band
+DEHARSH_BAND_HIGH_HZ = 4500.0
 DEHARSH_THRESH_MIN = 8.0
 DEHARSH_THRESH_MAX = 50.0
 DEHARSH_CREST_FACTOR = 2.0
+
+# ── HF correlation (mid_side analysis) ────────────────────────────────
+
+HF_CORR_LOW_HZ = 5000.0
+HF_CORR_HIGH_HZ = 10000.0
+HF_CORR_ORDER = 4
 
 # ── Intensity macro ───────────────────────────────────────────────────
 

@@ -17,7 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_filtergraph(report: dict[str, Any], stages: dict[str, bool] | None = None) -> str:
+def build_filtergraph(report: dict[str, Any] | None = None,
+                      stages: dict[str, bool] | None = None,
+                      derived=None) -> str:
     """
     Build the complete ffmpeg filter_complex string.
 
@@ -41,44 +43,52 @@ def build_filtergraph(report: dict[str, Any], stages: dict[str, bool] | None = N
         return stages.get(name, _defaults_off.get(name, True))
 
     # ── Parameters ──────────────────────────────────────────────
+    d = derived
+    r = report or {}
+
     # Expander
-    exp_ratio = report.get("expander_ratio", 2.0)
-    exp_thresh = report.get("expander_threshold_linear", 0.05)
-    exp_attack = report.get("expander_attack_ms", 5.0)
-    exp_release = report.get("expander_release_ms", 40.0)
-    exp_range = report.get("expander_range_linear", 0.25)
+    exp_ratio = d.expander_ratio if d else r.get("expander_ratio", 2.0)
+    exp_thresh = d.expander_threshold_linear if d else r.get("expander_threshold_linear", 0.05)
+    exp_attack = d.expander_attack_ms if d else r.get("expander_attack_ms", 5.0)
+    exp_release = d.expander_release_ms if d else r.get("expander_release_ms", 40.0)
+    exp_range = r.get("expander_range_linear", 0.25) if not d else 0.25
 
     # Sidechain ducking
-    comp_thresh = report.get("comp_threshold_linear", 0.05)
-    comp_ratio = report.get("comp_ratio", 6)
-    comp_attack = report.get("comp_attack_ms", 0.5)
-    comp_release = report.get("comp_release_ms", 60.0)
+    comp_thresh = d.comp_threshold_linear if d else r.get("comp_threshold_linear", 0.05)
+    comp_ratio = d.comp_ratio if d else r.get("comp_ratio", 6)
+    comp_attack = d.comp_attack_ms if d else r.get("comp_attack_ms", 0.5)
+    comp_release = d.comp_release_ms if d else r.get("comp_release_ms", 60.0)
 
     # De-harsher
-    deharsh_thresh = report.get("deharsher_threshold_linear", 5.0)
-    deharsh_ratio = report.get("deharsher_filter_ratio", 3.0)
-    deharsh_attack = report.get("deharsher_attack_ms", 3.0)
-    deharsh_release = report.get("deharsher_release_ms", 30.0)
+    deharsh_thresh = d.deharsher_threshold_linear if d else r.get("deharsher_threshold_linear", 5.0)
+    deharsh_ratio = d.deharsher_filter_ratio if d else r.get("deharsher_filter_ratio", 3.0)
+    deharsh_attack = d.deharsher_attack_ms if d else r.get("deharsher_attack_ms", 3.0)
+    deharsh_release = d.deharsher_release_ms if d else r.get("deharsher_release_ms", 30.0)
 
-    # Notches
-    nf1, nq1, ng1 = report.get("notch_freq_1", 300), report.get("notch_q_1", 20), report.get("notch_gain_1", -6)
-    nf2, nq2, ng2 = report.get("notch_freq_2", 450), report.get("notch_q_2", 20), report.get("notch_gain_2", -5)
-    nf3, nq3, ng3 = report.get("notch_freq_3", 600), report.get("notch_q_3", 20), report.get("notch_gain_3", -4)
+    # Notches — use derived for type safety
+    if d:
+        nf1, nq1, ng1 = d.notch_freq_1, d.notch_q_1, d.notch_gain_1
+        nf2, nq2, ng2 = d.notch_freq_2, d.notch_q_2, d.notch_gain_2
+        nf3, nq3, ng3 = d.notch_freq_3, d.notch_q_3, d.notch_gain_3
+    else:
+        nf1, nq1, ng1 = r.get("notch_freq_1", 300), r.get("notch_q_1", 20), r.get("notch_gain_1", -6)
+        nf2, nq2, ng2 = r.get("notch_freq_2", 450), r.get("notch_q_2", 20), r.get("notch_gain_2", -5)
+        nf3, nq3, ng3 = r.get("notch_freq_3", 600), r.get("notch_q_3", 20), r.get("notch_gain_3", -4)
 
     # Saturation
-    sat_thresh = report.get("sat_threshold_linear", 0.85)
-    sat_drive_db = report.get("sat_drive_db", 1.2)
-    sat_makeup_db = report.get("sat_makeup_db", -0.7)
+    sat_thresh = d.sat_threshold_linear if d else r.get("sat_threshold_linear", 0.85)
+    sat_drive_db = d.sat_drive_db if d else r.get("sat_drive_db", 1.2)
+    sat_makeup_db = d.sat_makeup_db if d else r.get("sat_makeup_db", -0.7)
 
     # Bus compressor
-    bus_thresh = report.get("bus_threshold_linear", 0.18)
-    bus_ratio = report.get("bus_ratio", 2)
-    bus_attack = report.get("bus_attack_ms", 10)
-    bus_release = report.get("bus_release_ms", 100)
-    bus_mix = report.get("bus_mix", 0.0)
+    bus_thresh = d.bus_threshold_linear if d else r.get("bus_threshold_linear", 0.18)
+    bus_ratio = d.bus_ratio if d else r.get("bus_ratio", 2)
+    bus_attack = d.bus_attack_ms if d else r.get("bus_attack_ms", 10)
+    bus_release = d.bus_release_ms if d else r.get("bus_release_ms", 100)
+    bus_mix = d.bus_mix if d else r.get("bus_mix", 0.0)
 
     # Limiter
-    limit_lin = report.get("limiter_ceiling_linear", 0.88)
+    limit_lin = d.limiter_ceiling_linear if d else r.get("limiter_ceiling_linear", 0.88)
 
     # ── Build chains ────────────────────────────────────────────
     parts: list[str] = []
@@ -162,12 +172,12 @@ def build_filtergraph(report: dict[str, Any], stages: dict[str, bool] | None = N
         )
 
     # Stage: Air (Bell at 10 kHz, Q=2.0)
-    air_db = report.get("_air_db", 1.5)
+    air_db = d.air_db if d else r.get("_air_db", 0.0)
     if on("air"):
         tail += f",equalizer=frequency=10000:width_type=q:width=2.0:gain={air_db}"
 
     # Stage: Width (stereo widening via stereotools)
-    w = report.get("_width", 0.0)
+    w = d.width if d else r.get("_width", 0.0)
     if on("width"):
         tail += f",stereotools=mode=lr>lr:base={w}:slev=1:mlev=1"
 
