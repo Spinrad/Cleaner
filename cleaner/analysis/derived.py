@@ -27,26 +27,19 @@ from cleaner.constants import (
 logger = logging.getLogger(__name__)
 
 
-def compute_derived_params(analysis: AnalysisReport | dict,
+def compute_derived_params(analysis: AnalysisReport,
                            settings: MasteringSettings) -> DerivedParams:
-    """Compute all DSP parameters from analysis and settings.
+    """Compute all DSP parameters from analysis and settings."""
 
-    Args:
-        analysis: AnalysisReport dataclass, or backward-compat dict.
-        settings: User-facing configuration.
-
-    Returns:
-        DerivedParams with all computed values for both builders.
-    """
     d = DerivedParams()
 
     # ── Unpack analysis ─────────────────────────────────────────────
-    crest = analysis.crest_factor_db if hasattr(analysis, 'crest_factor_db') else analysis.get("crest_factor_db", 12.0)
-    rms = analysis.rms_db if hasattr(analysis, 'rms_db') else analysis.get("rms_db", -15.0)
-    peak_db = analysis.peak_db if hasattr(analysis, 'peak_db') else analysis.get("peak_db", -3.0)
-    attack_ms = analysis.transient_attack_ms if hasattr(analysis, 'transient_attack_ms') else analysis.get("transient_attack_ms", 10.0)
-    agc_rec = analysis.agc_recovery_ms if hasattr(analysis, 'agc_recovery_ms') else analysis.get("agc_recovery_ms", 80.0)
-    is_clip = analysis.is_heavily_clipped if hasattr(analysis, 'is_heavily_clipped') else analysis.get("is_heavily_clipped", False)
+    crest = analysis.crest_factor_db
+    rms = analysis.rms_db
+    peak_db = analysis.peak_db
+    attack_ms = analysis.transient_attack_ms
+    agc_rec = analysis.agc_recovery_ms
+    is_clip = analysis.is_heavily_clipped
 
     # ── Expander ────────────────────────────────────────────────────
     exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
@@ -110,15 +103,9 @@ def compute_derived_params(analysis: AnalysisReport | dict,
     d.bus_release_ms = BUS_RELEASE_MS
 
     # ── Notches ─────────────────────────────────────────────────────
-    # Read room modes: prefer dataclass, fallback to dict
-    if hasattr(analysis, 'room_modes_hz'):
-        modes_hz = list(analysis.room_modes_hz)
-        modes_q = list(analysis.room_mode_qs)
-        prom_db = list(analysis.room_mode_gains_db)
-    else:
-        modes_hz = list(analysis.get("room_modes_hz", [300, 450, 600]))
-        modes_q = list(analysis.get("room_mode_qs", [5, 5, 5]))
-        prom_db = list(analysis.get("room_mode_gains_db", [3, 3, 3]))
+    modes_hz = list(analysis.room_modes_hz)
+    modes_q = list(analysis.room_mode_qs)
+    prom_db = list(analysis.room_mode_gains_db)
 
     while len(modes_hz) < MAX_ROOM_MODES:
         modes_hz.append(450)

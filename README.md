@@ -62,7 +62,7 @@ Enabled by default except where noted.
 | 10 | Stereo width | `stereotools=mode=lr>lr` (base spread) [NATIF] | `--width` / (abs ≤ 0.001 → off) |
 | 11 | Bus compressor | `compressor_stereo` (LSP, SSL-style, parallel) [LSP] | `--bus-comp` / (value ≤ 0.01 → off) |
 | 12 | Limiter | `limiter_stereo` (LSP, true-peak, oversampling, ALR) [LSP] | `--limiter` / `--no-limiter` |
-| 13 | LUFS normalisation | `ebur128` → `volume` (gain clamped to [-3, +6] dB) [NATIF] | `--lufs` / `--no-lufs` |
+| 13 | LUFS normalisation | `ebur128` → `volume` (gain clamped to [-6, +14] dB) [NATIF] | `--lufs` / `--no-lufs` |
 | 14 | Post-LUFS re-limiter | `alimiter` (ceiling from `--ceiling`, only if LUFS gain > 0.5 dB) [NATIF] | (automatic) |
 
 When `--force-native` is used, the [LSP] stages are replaced by native ffmpeg
@@ -167,7 +167,7 @@ pytest tests/ -v
   has already destroyed information. The expander can only amplify what remains.
 - **Saturation is native ffmpeg** (`asoftclip=type=tanh`, 4× oversampling).
   LSP v1.2.12 does not provide a saturator plugin. The tanh soft-clip is
-  driven into its non-linear zone by `--glue` (0→0 dB drive, 1→+16 dB drive)
+  driven into its non-linear zone by `--glue` (0→0 dB drive, 1→+12 dB drive)
   and compensated with automatic makeup gain. At default settings
   (`glue=0.15`), the effect is subtle but measurable (+52% H3 at -1 dBFS).
 - **LUFS gain is clamped to [-6, +14] dB.** Gains above +6 dB are possible

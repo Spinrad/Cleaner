@@ -57,10 +57,6 @@ class AnalysisReport:
     # Warnings (non-frozen field for mutation after construction)
     _analysis_warnings: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        """For backward compat with code that still expects a dict."""
-        return {f.name: getattr(self, f.name) for f in self.__dataclass_fields__.values()}
-
     def __getitem__(self, key: str):
         return getattr(self, key)
 

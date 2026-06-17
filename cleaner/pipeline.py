@@ -83,71 +83,60 @@ def _box_close() -> None:
     click.secho(f"  +{'-'*58}+", fg="yellow")
 
 
-def _print_analysis_report(report):
+def _print_analysis_report(analysis):
     """Detailed Phase 1 analysis."""
     _box_header("RAPPORT D'ANALYSE (Phase 1)")
-    crest = report.get('crest_factor_db', 0)
+    crest = analysis.crest_factor_db
     tag = ("tres dynamique" if crest > 12 else
            "AGC smartphone probable" if crest < 8 else "dynamique moderee")
     _box_line(f"Crest Factor  : {crest:.1f} dB  ({tag})")
-    _box_line(f"Peak / RMS    : {report.get('peak_db',0):.1f} / {report.get('rms_db',0):.1f} dBFS")
-    _box_line(f"AGC recovery  : {report.get('agc_recovery_ms',0):.0f} ms")
-    _box_line(f"Attack median : {report.get('transient_attack_ms',0):.1f} ms")
+    _box_line(f"Peak / RMS    : {analysis.peak_db:.1f} / {analysis.rms_db:.1f} dBFS")
+    _box_line(f"AGC recovery  : {analysis.agc_recovery_ms:.0f} ms")
+    _box_line(f"Attack median : {analysis.transient_attack_ms:.1f} ms")
     _box_line("")
     _box_line("Resonances (Room Modes) :", "yellow")
-    modes = report.get('room_modes_hz', [])
-    qs = report.get('room_mode_qs', [])
-    gains = report.get('room_mode_gains_db', [])
+    modes = analysis.room_modes_hz
+    qs = analysis.room_mode_qs
+    gains = analysis.room_mode_gains_db
     for i in range(min(3, len(modes))):
         _box_line(f"  Mode {i+1}: {modes[i]:.1f} Hz  Q={qs[i]:.0f}  {gains[i]:+.1f} dB")
     _box_line("")
     _box_line("Stereo :", "yellow")
-    _box_line(f"  Correlation M/S  : {report.get('ms_correlation_avg',0):.3f}  (1=mono, 0=large)")
-    _box_line(f"  Side energy      : {report.get('side_energy_ratio',0)*100:.1f}%")
-    _box_line(f"  HF correlation   : {report.get('hf_correlation',0):.3f}  (cymbales >5kHz)")
-    hf = report.get('hf_correlation', 0.5)
-    if hf < 0.3:
+    _box_line(f"  Correlation M/S  : {analysis.ms_correlation_avg:.3f}  (1=mono, 0=large)")
+    _box_line(f"  Side energy      : {analysis.side_energy_ratio*100:.1f}%")
+    _box_line(f"  HF correlation   : {analysis.hf_correlation:.3f}  (cymbales >5kHz)")
+    if analysis.hf_correlation < 0.3:
         _box_line("  -> Chaos de phase aigus detecte !")
     _box_line("")
     _box_line("Ecretage :", "yellow")
-    is_clip = report.get('is_heavily_clipped', False)
-    ratio = report.get('clip_ratio', 0)
-    if is_clip:
-        _box_line(f"  FORT EC RETAGE: {ratio*100:.1f}%  -> penalite appliquee")
+    if analysis.is_heavily_clipped:
+        _box_line(f"  FORT EC RETAGE: {analysis.clip_ratio*100:.1f}%  -> penalite appliquee")
     else:
-        _box_line(f"  {ratio*100:.2f}%  -- acceptable")
+        _box_line(f"  {analysis.clip_ratio*100:.2f}%  -- acceptable")
     _box_close()
     click.echo()
 
 
-def _print_chain_summary(report, stages, use_lsp=False, derived=None, settings=None):
+def _print_chain_summary(stages, use_lsp=False, derived=None, settings=None):
     """Human-readable filterchain summary."""
     _box_header("CHAINE DSP APPLIQUEE")
-    d = derived  # shorthand
+    d = derived
     s = settings
     i = 0
     if stages.get("expander", False):
         i += 1
-        if use_lsp and d:
+        if use_lsp:
             _box_line(f"{i}. HP 35Hz + Expander LSP (gentle relief)", "cyan")
             _box_line(f"   mode=Up  ratio={d.expander_ratio:.1f}  "
                       f"attack={d.expander_attack_ms:.0f}ms  "
                       f"release={d.expander_release_ms:.0f}ms", "cyan")
-        elif use_lsp:
-            _box_line(f"{i}. HP 35Hz + Expander LSP (gentle relief)", "cyan")
-            _box_line(f"   mode=Up  ratio={report.get('expander_ratio',2):.1f}  "
-                      f"attack={report.get('expander_attack_ms',5):.0f}ms  "
-                      f"release={report.get('expander_release_ms',40):.0f}ms", "cyan")
         else:
             _box_line(f"{i}. HP 35Hz + Expander (anti-AGC)", "cyan")
-            exp_th = 20*np.log10(max(report.get('expander_threshold_linear', 0.1) if not d else d.expander_threshold_linear, 1e-10))
-            r = d.expander_ratio if d else report.get('expander_ratio', 2)
-            a = d.expander_attack_ms if d else report.get('expander_attack_ms', 5)
-            rel = d.expander_release_ms if d else report.get('expander_release_ms', 40)
-            rng = report.get('expander_range_linear', 0.25)
-            _box_line(f"   seuil={exp_th:.1f}dB  ratio={r:.1f}  "
-                      f"attack={a:.0f}ms  release={rel:.0f}ms  "
-                      f"range=+{20*np.log10(1+rng):.1f}dB", "cyan")
+            exp_th = 20*np.log10(max(d.expander_threshold_linear, 1e-10))
+            _box_line(f"   seuil={exp_th:.1f}dB  ratio={d.expander_ratio:.1f}  "
+                      f"attack={d.expander_attack_ms:.0f}ms  "
+                      f"release={d.expander_release_ms:.0f}ms  "
+                      f"range=+{20*np.log10(1+d.expander_range_linear):.1f}dB", "cyan")
     else:
         _box_line(f"   Expander DESACTIVE", "cyan")
     hp35_on = stages.get("hp35", True)
@@ -160,77 +149,55 @@ def _print_chain_summary(report, stages, use_lsp=False, derived=None, settings=N
         _box_line(f"   HP 150Hz Side DESACTIVE", "cyan")
     if stages.get("ducking", True):
         i += 1
-        th = 20*np.log10(max((d.comp_threshold_linear if d else report.get('comp_threshold_linear', 0.1)), 1e-10))
-        c_r = d.comp_ratio if d else report.get('comp_ratio', 4)
-        c_a = d.comp_attack_ms if d else report.get('comp_attack_ms', 2.0)
-        c_rel = d.comp_release_ms if d else report.get('comp_release_ms', 60)
+        th = 20*np.log10(max(d.comp_threshold_linear, 1e-10))
         _box_line(f"{i}. Sidechain Ducking (Mid ecrase Side)", "cyan")
-        _box_line(f"   seuil={th:.1f}dB  ratio={c_r}:1  "
-                  f"attack={c_a:.0f}ms  release={c_rel:.0f}ms", "cyan")
+        _box_line(f"   seuil={th:.1f}dB  ratio={d.comp_ratio}:1  "
+                  f"attack={d.comp_attack_ms:.0f}ms  release={d.comp_release_ms:.0f}ms", "cyan")
     else:
         _box_line(f"   Ducking DESACTIVE", "cyan")
     if stages.get("deharsher", False):
         i += 1
         if use_lsp:
             _box_line(f"{i}. De-harsher LSP [2.5-4.5 kHz] (experimental)", "cyan")
-            _box_line(f"   seuil adaptatif  "
-                      f"ratio={report.get('harshness_index',0.3)*2+1.5:.1f}", "cyan")
         else:
             _box_line(f"{i}. De-harsher dynamique [2.5-4.5 kHz] (experimental)", "cyan")
-            dh_th = d.deharsher_display_threshold if d else report.get('deharsher_display_threshold', 5)
-            dh_r = d.deharsher_filter_ratio if d else report.get('deharsher_filter_ratio', 3)
-            _box_line(f"   seuil={dh_th:.1f}  ratio={dh_r:.1f}", "cyan")
+            _box_line(f"   seuil={d.deharsher_display_threshold:.1f}  ratio={d.deharsher_filter_ratio:.1f}", "cyan")
     else:
         _box_line(f"   De-harsher DESACTIVE (opt-in avec --deharsher)", "cyan")
     if stages.get("notches", True):
         i += 1
         _box_line(f"{i}. Notch filters x3 (Room Modes)", "cyan")
         for j in range(1, 4):
-            f = getattr(d, f'notch_freq_{j}', 0) if d else report.get(f'notch_freq_{j}', 0)
-            g = getattr(d, f'notch_gain_{j}', 0) if d else report.get(f'notch_gain_{j}', 0)
+            f = getattr(d, f'notch_freq_{j}', 0)
+            g = getattr(d, f'notch_gain_{j}', 0)
             _box_line(f"   Notch {j}: {f:.1f} Hz  gain={g:.1f} dB", "cyan")
     else:
         _box_line(f"   Notches DESACTIVES", "cyan")
     if stages.get("saturation", True):
         i += 1
-        if use_lsp and s:
-            eff = s.glue * (INTENSITY_GLUE_OFFSET + s.intensity * INTENSITY_GLUE_SLOPE)
-            drive_db = eff * SAT_DRIVE_MULTIPLIER
-            makeup_db = -drive_db * SAT_MAKEUP_RATIO
-            _box_line(f"{i}. Saturation (drive+makeup, 4x oversample)", "cyan")
-            _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB", "cyan")
-        elif use_lsp:
-            glue = report.get('_glue', 0.15)
-            intensity = report.get('_intensity', 0.5)
-            eff = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
-            drive_db = eff * SAT_DRIVE_MULTIPLIER
-            makeup_db = -drive_db * SAT_MAKEUP_RATIO
+        eff = s.glue * (INTENSITY_GLUE_OFFSET + s.intensity * INTENSITY_GLUE_SLOPE)
+        drive_db = eff * SAT_DRIVE_MULTIPLIER
+        makeup_db = -drive_db * SAT_MAKEUP_RATIO
+        if use_lsp:
             _box_line(f"{i}. Saturation (drive+makeup, 4x oversample)", "cyan")
             _box_line(f"   drive=+{drive_db:.1f}dB  makeup={makeup_db:.1f}dB", "cyan")
         else:
             _box_line(f"{i}. Tape Saturation (drive+makeup, 4x oversample)", "cyan")
-            sd = d.sat_drive_db if d else report.get('sat_drive_db', 1.2)
-            st = d.sat_threshold_linear if d else report.get('sat_threshold_linear', 0.85)
-            sm = d.sat_makeup_db if d else report.get('sat_makeup_db', -0.7)
-            _box_line(f"   drive=+{sd:.1f}dB  seuil={st:.2f}  makeup={sm:.1f}dB", "cyan")
+            _box_line(f"   drive=+{d.sat_drive_db:.1f}dB  seuil={d.sat_threshold_linear:.2f}  makeup={d.sat_makeup_db:.1f}dB", "cyan")
     else:
         _box_line(f"   Saturation DESACTIVEE", "cyan")
     if stages.get("air", False):
-        air_val = d.air_db if d else report.get('_air_db', 0.0)
-        _box_line(f"   Air: {air_val:+.1f} dB @ 10kHz", "cyan")
+        _box_line(f"   Air: {d.air_db:+.1f} dB @ 10kHz", "cyan")
     if stages.get("width", False):
-        w = s.width if s else report.get("_width", 0.0)
-        _box_line(f"   Width: {w:+.1f} ({'elargi' if w > 0 else 'resserre' if w < 0 else 'neutre'})", "cyan")
+        _box_line(f"   Width: {s.width:+.1f} ({'elargi' if s.width > 0 else 'resserre' if s.width < 0 else 'neutre'})", "cyan")
     if stages.get("bus_comp", False):
         if use_lsp:
-            bus = s.bus_comp if s else report.get('_bus_comp', 0.0)
             _box_line(f"   Bus Comp LSP: seuil auto  ratio=2:1  "
-                      f"attack=10ms  mix={bus:.0%}  dry/wet", "cyan")
+                      f"attack=10ms  mix={s.bus_comp:.0%}  dry/wet", "cyan")
         else:
-            bth = d.bus_threshold_linear if d else report.get('bus_threshold_linear', 0.18)
-            bth = 20*np.log10(max(bth, 1e-10))
+            bth = 20*np.log10(max(d.bus_threshold_linear, 1e-10))
             _box_line(f"   Bus Comp SSL: seuil={bth:.1f}dB  ratio=2:1  "
-                      f"attack=10ms  mix={(d.bus_mix if d else report.get('bus_mix',0)):.0%}", "cyan")
+                      f"attack=10ms  mix={d.bus_mix:.0%}", "cyan")
     if stages.get("limiter", True):
         i += 1
         if use_lsp:
@@ -317,7 +284,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         click.echo("  [2/5] Analyse (Phase 1)...")
         analysis = get_global_analysis(str(input_wav))
         result.report = analysis
-        _print_analysis_report(analysis.to_dict())
+        _print_analysis_report(analysis)
         
         # 3. Settings + params
         settings = MasteringSettings(
@@ -340,7 +307,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
             else:
                 click.secho("  Mode: ffmpeg natif", fg="cyan")
             graph = build_filtergraph(stages=stages, derived=derived)
-        _print_chain_summary(None, stages, use_lsp, derived=derived, settings=settings)
+        _print_chain_summary(stages, use_lsp, derived=derived, settings=settings)
 
         if dry_run:
             click.echo(f"  Filtergraph ({len(graph)} chars):")
