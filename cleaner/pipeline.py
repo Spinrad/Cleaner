@@ -332,7 +332,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
         click.echo("  [3/5] Construction de la chaine DSP...")
         if use_lsp:
             click.secho("  Mode: LSP/LV2 (plugins detectes)", fg="cyan")
-            graph = build_lsp_filtergraph(analysis.to_dict(), stages, derived=derived, settings=settings)
+            graph = build_lsp_filtergraph(analysis, settings, derived, stages)
         else:
             if not force_native and not _lsp_available():
                 click.secho("  [!] LSP plugins non trouves — fallback natif.", fg="yellow")

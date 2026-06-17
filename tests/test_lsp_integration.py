@@ -162,22 +162,20 @@ class TestFullLSPChain:
             noise = rng.normal(0, 10 ** (-20 / 20), (int(sr * dur), 2))
             sf.write(str(input_wav), noise.astype(np.float32), sr, subtype="PCM_24")
 
-            report = {
+            analysis_data = {
                 'crest_factor_db': 10.0, 'peak_db': -3.0, 'rms_db': -15.0,
                 'transient_attack_ms': 8.0, 'agc_recovery_ms': 60.0,
-                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
-                'comp_attack_ms': 2.0, 'comp_release_ms': 60.0,
-                'room_modes_hz': [250, 400, 550], 'room_mode_qs': [8, 5, 7],
-                'room_mode_gains_db': [5, 4, 3],
-                'harshness_index': 0.2, '_tame_cymbals': 0,
-                '_intensity': 0.5, '_glue': 0.3, '_air': 1.0,
-                '_bus_comp': 0.2, '_ceiling_db': -1.1,
-                '_notch_multiplier': 1.0, '_width': 0.0,
+                'room_modes_hz': (250, 400, 550), 'room_mode_qs': (8, 5, 7),
+                'room_mode_gains_db': (5, 4, 3),
+                'harshness_index': 0.2,
+                'is_heavily_clipped': False,
             }
-            from cleaner.types import MasteringSettings, DerivedParams
+            from cleaner.types import AnalysisReport, MasteringSettings
             from cleaner.analysis.derived import compute_derived_params
-            settings = MasteringSettings(glue=0.3, air=1.0, bus_comp=0.2)
-            derived = compute_derived_params(report, settings)
+            analysis = AnalysisReport(**analysis_data)
+            settings = MasteringSettings(glue=0.3, air=1.0, bus_comp=0.2, ceiling_db=-1.1,
+                                         intensity=0.5, notch_multiplier=1.0)
+            derived = compute_derived_params(analysis, settings)
             stages = {
                 'expander': True, 'ducking': True, 'deharsher': True,
                 'notches': True, 'saturation': True, 'limiter': True,
@@ -186,7 +184,7 @@ class TestFullLSPChain:
             }
 
             from cleaner.lsp_chain_builder import build_lsp_filtergraph
-            graph = build_lsp_filtergraph(report, stages, derived=derived, settings=settings)
+            graph = build_lsp_filtergraph(analysis, settings, derived, stages)
 
             assert 'lv2=p=' in graph
             assert '[out]' in graph
@@ -227,25 +225,24 @@ class TestFullLSPChain:
             sf.write(str(input_wav), noise.astype(np.float32), sr, subtype="PCM_24")
 
             from cleaner.ffmpeg_chain import build_filtergraph
+            from cleaner.types import DerivedParams
+            d = DerivedParams(
+                comp_threshold_linear=0.18, comp_ratio=4,
+                comp_attack_ms=2.0, comp_release_ms=60,
+                notch_freq_1=300.0, notch_q_1=20.0, notch_gain_1=-6.0,
+                notch_freq_2=450.0, notch_q_2=20.0, notch_gain_2=-5.0,
+                notch_freq_3=600.0, notch_q_3=20.0, notch_gain_3=-4.0,
+                limiter_ceiling_linear=0.88,
+                expander_threshold_linear=0.05, expander_ratio=2.0,
+                expander_attack_ms=5.0, expander_release_ms=40.0,
+                expander_range_linear=0.25,
+                sat_threshold_linear=0.74, sat_drive_db=8.0, sat_makeup_db=-3.2,
+                air_db=0.0, width=0.0,
+                bus_threshold_linear=0.18, bus_ratio=2, bus_attack_ms=10,
+                bus_release_ms=100, bus_mix=0.0,
+            )
 
-            report = {
-                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
-                'comp_attack_ms': 2.0, 'comp_release_ms': 60,
-                'notch_freq_1': 300.0, 'notch_q_1': 20.0, 'notch_gain_1': -6.0,
-                'notch_freq_2': 450.0, 'notch_q_2': 20.0, 'notch_gain_2': -5.0,
-                'notch_freq_3': 600.0, 'notch_q_3': 20.0, 'notch_gain_3': -4.0,
-                'limiter_ceiling_linear': 0.88,
-                'expander_threshold_linear': 0.05, 'expander_ratio': 2.0,
-                'expander_attack_ms': 5.0, 'expander_release_ms': 40.0,
-                'expander_range_linear': 0.25,
-                'sat_threshold_linear': 0.74, 'sat_softclip_type': 0,
-                'sat_drive_db': 8.0, 'sat_makeup_db': -3.2,
-                '_air_db': 0.0, '_width': 0.0,
-                'bus_threshold_linear': 0.18, 'bus_ratio': 2, 'bus_attack_ms': 10,
-                'bus_release_ms': 100, 'bus_mix': 0.0,
-            }
-
-            graph = build_filtergraph(report)
+            graph = build_filtergraph(derived=d)
 
             cmd = [
                 "ffmpeg", "-y", "-nostdin",
@@ -277,17 +274,12 @@ class TestFullLSPChain:
             stereo = np.column_stack([y, y.copy()])
             sf.write(str(input_wav), stereo.astype(np.float32), sr, subtype="PCM_24")
 
-            report = {
+            analysis_data2 = {
                 'crest_factor_db': 10.0, 'peak_db': -3.0, 'rms_db': -15.0,
                 'transient_attack_ms': 8.0, 'agc_recovery_ms': 60.0,
-                'comp_threshold_linear': 0.18, 'comp_ratio': 4,
-                'comp_attack_ms': 2.0, 'comp_release_ms': 60.0,
-                'room_modes_hz': [250], 'room_mode_qs': [5],
-                'room_mode_gains_db': [2],
-                'harshness_index': 0.0, '_tame_cymbals': 0,
-                '_intensity': 1.0, '_glue': 0.6, '_air': 0.0,
-                '_bus_comp': 0.0, '_ceiling_db': -1.1,
-                '_notch_multiplier': 1.0, '_width': 0.0,
+                'room_modes_hz': (250,), 'room_mode_qs': (5,),
+                'room_mode_gains_db': (2,),
+                'harshness_index': 0.0, 'is_heavily_clipped': False,
             }
             stages = {
                 'expander': False, 'ducking': False, 'deharsher': False,
@@ -297,11 +289,12 @@ class TestFullLSPChain:
             }
 
             from cleaner.lsp_chain_builder import build_lsp_filtergraph
-            from cleaner.types import MasteringSettings
+            from cleaner.types import AnalysisReport, MasteringSettings
             from cleaner.analysis.derived import compute_derived_params
+            analysis2 = AnalysisReport(**analysis_data2)
             settings = MasteringSettings(glue=0.6, intensity=1.0)
-            derived = compute_derived_params(report, settings)
-            graph = build_lsp_filtergraph(report, stages, derived=derived, settings=settings)
+            derived = compute_derived_params(analysis2, settings)
+            graph = build_lsp_filtergraph(analysis2, settings, derived, stages)
 
             cmd = [
                 "ffmpeg", "-y", "-nostdin",
@@ -395,23 +388,23 @@ def test_smoke_full_native_chain():
 
         from cleaner.ffmpeg_chain import build_filtergraph
 
-        report = {
-            'comp_threshold_linear': 0.18, 'comp_ratio': 4,
-            'comp_attack_ms': 2.0, 'comp_release_ms': 60,
-            'notch_freq_1': 300.0, 'notch_q_1': 20.0, 'notch_gain_1': -6.0,
-            'notch_freq_2': 450.0, 'notch_q_2': 20.0, 'notch_gain_2': -5.0,
-            'notch_freq_3': 600.0, 'notch_q_3': 20.0, 'notch_gain_3': -4.0,
-            'limiter_ceiling_linear': 0.88,
-            'expander_threshold_linear': 0.05, 'expander_ratio': 2.0,
-            'expander_attack_ms': 5.0, 'expander_release_ms': 40.0,
-            'expander_range_linear': 0.25,
-            'sat_threshold_linear': 0.74, 'sat_softclip_type': 0,
-            'sat_drive_db': 8.0, 'sat_makeup_db': -3.2,
-            '_air_db': 0.0, '_width': 0.0,
-            'bus_threshold_linear': 0.18, 'bus_ratio': 2, 'bus_attack_ms': 10,
-            'bus_release_ms': 100, 'bus_mix': 0.0,
-        }
-        graph = build_filtergraph(report)
+        from cleaner.types import DerivedParams
+        d = DerivedParams(
+            comp_threshold_linear=0.18, comp_ratio=4,
+            comp_attack_ms=2.0, comp_release_ms=60,
+            notch_freq_1=300.0, notch_q_1=20.0, notch_gain_1=-6.0,
+            notch_freq_2=450.0, notch_q_2=20.0, notch_gain_2=-5.0,
+            notch_freq_3=600.0, notch_q_3=20.0, notch_gain_3=-4.0,
+            limiter_ceiling_linear=0.88,
+            expander_threshold_linear=0.05, expander_ratio=2.0,
+            expander_attack_ms=5.0, expander_release_ms=40.0,
+            expander_range_linear=0.25,
+            sat_threshold_linear=0.74, sat_drive_db=8.0, sat_makeup_db=-3.2,
+            air_db=0.0, width=0.0,
+            bus_threshold_linear=0.18, bus_ratio=2, bus_attack_ms=10,
+            bus_release_ms=100, bus_mix=0.0,
+        )
+        graph = build_filtergraph(derived=d)
         cmd = ["ffmpeg", "-y", "-nostdin", "-i", str(input_wav),
                "-filter_complex", graph, "-map", "[out]",
                "-c:a", "pcm_s24le", str(output_wav)]
