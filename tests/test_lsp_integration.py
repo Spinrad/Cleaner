@@ -442,3 +442,43 @@ def test_port_unit_resolution_without_plugins():
     p_gain = PortInfo(symbol="g_3", min_val=0.01585, max_val=63.1, default_val=1, unit="linear_gain")
     assert abs(clamp_to_port(0, p_gain, convert_unit=True) - 1.0) < 0.001  # 0 dB → 1.0
     assert abs(clamp_to_port(6, p_gain, convert_unit=True) - 2.0) < 0.01   # 6 dB → ~2.0
+
+
+def test_lsp_graph_reflects_typed_values_no_plugins():
+    """LSP graph must use settings.ceiling_db and derived.comp_threshold_linear,
+    NOT hardcoded defaults. This test catches the ceiling regression (was always -1.1)."""
+    from cleaner.types import AnalysisReport, MasteringSettings
+    from cleaner.analysis.derived import compute_derived_params
+
+    analysis = AnalysisReport()
+    settings = MasteringSettings(ceiling_db=-0.5, intensity=0.5)
+    derived = compute_derived_params(analysis, settings)
+
+    stages = {
+        'hp35': False, 'hp150': False, 'expander': False, 'ducking': True,
+        'deharsher': False, 'notches': False, 'saturation': False,
+        'limiter': False, 'glue': False, 'air': False,
+        'width': False, 'bus_comp': False, 'intensity': True,
+    }
+
+    try:
+        from cleaner.lsp_chain_builder import build_lsp_filtergraph
+        graph = build_lsp_filtergraph(analysis, settings, derived, stages)
+    except RuntimeError as e:
+        if "LV2 plugin introspection failed" in str(e):
+            # Plugin not found, skip
+            return
+        if "Cannot validate port symbols" in str(e):
+            return
+        raise
+
+    # Postamble should use settings.ceiling_db (-0.5), NOT default -1.1
+    # ceiling_db=-0.5: limit = 10^(-0.5/20) ≈ 0.9441
+    # post_ceiling = -0.5 + 0.0 (limiter off) = -0.5, min(-0.5, -0.3) = -0.5
+    expected_limit = f"{10.0**(-0.5/20.0):.4f}"
+    assert f"alimiter=limit={expected_limit}" in graph, \
+        f"Postamble ceiling should be {expected_limit} (from settings.ceiling_db=-0.5), got: ...{graph[-200:]}"
+
+    # Ducking should use derived.comp_threshold_linear, not default 0.05
+    assert f"threshold={derived.comp_threshold_linear}" in graph, \
+        f"Ducking threshold should be {derived.comp_threshold_linear} (from derived), not 0.05"
