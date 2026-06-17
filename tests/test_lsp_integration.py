@@ -57,7 +57,11 @@ class TestNativeSaturationAudibility:
             sf.write(str(input_wav), stereo.astype(np.float32), sr, subtype="PCM_24")
 
             from cleaner.analysis.global_analysis import compute_native_saturation_params
-            sat = compute_native_saturation_params({"_glue": 0.8, "_intensity": 1.0})
+            from cleaner.types import DerivedParams
+            derived = DerivedParams(sat_drive_db=round(0.8*(0.3+1.0*0.7)*12.0, 1),
+                                    sat_makeup_db=round(-0.8*(0.3+1.0*0.7)*12.0*0.4, 1),
+                                    sat_threshold_linear=round(0.92-0.8*(0.3+1.0*0.7)*0.35, 3))
+            sat = compute_native_saturation_params(derived)
 
             graph = (
                 f"[0:a]aresample={sr},"
@@ -121,8 +125,9 @@ class TestLSPIntrospection:
             pytest.skip("LSP plugins not installed")
         info = get_plugin_info(COMPRESSOR_URI)
         from cleaner.analysis.global_analysis import compute_compressor_lsp_params
-        report = {"crest_factor_db": 6.0, "rms_db": -15.0, "_bus_comp": 0.5}
-        params = compute_compressor_lsp_params(report)
+        from cleaner.types import DerivedParams
+        derived = DerivedParams(bus_threshold_linear=0.18, bus_mix=0.5)
+        params = compute_compressor_lsp_params(derived)
         for sym, val in params.items():
             port = info.ports.get(sym)
             if port:
@@ -169,6 +174,10 @@ class TestFullLSPChain:
                 '_bus_comp': 0.2, '_ceiling_db': -1.1,
                 '_notch_multiplier': 1.0, '_width': 0.0,
             }
+            from cleaner.types import MasteringSettings, DerivedParams
+            from cleaner.analysis.derived import compute_derived_params
+            settings = MasteringSettings(glue=0.3, air=1.0, bus_comp=0.2)
+            derived = compute_derived_params(report, settings)
             stages = {
                 'expander': True, 'ducking': True, 'deharsher': True,
                 'notches': True, 'saturation': True, 'limiter': True,
@@ -177,7 +186,7 @@ class TestFullLSPChain:
             }
 
             from cleaner.lsp_chain_builder import build_lsp_filtergraph
-            graph = build_lsp_filtergraph(report, stages)
+            graph = build_lsp_filtergraph(report, stages, derived=derived, settings=settings)
 
             assert 'lv2=p=' in graph
             assert '[out]' in graph
@@ -288,7 +297,11 @@ class TestFullLSPChain:
             }
 
             from cleaner.lsp_chain_builder import build_lsp_filtergraph
-            graph = build_lsp_filtergraph(report, stages)
+            from cleaner.types import MasteringSettings
+            from cleaner.analysis.derived import compute_derived_params
+            settings = MasteringSettings(glue=0.6, intensity=1.0)
+            derived = compute_derived_params(report, settings)
+            graph = build_lsp_filtergraph(report, stages, derived=derived, settings=settings)
 
             cmd = [
                 "ffmpeg", "-y", "-nostdin",
