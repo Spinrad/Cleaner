@@ -52,7 +52,6 @@ NOTCH_DEFAULT_GAIN_DB = (3.0, 3.0, 3.0)
 
 AIR_FREQ_HZ = 10000.0         # Bell centre frequency
 AIR_Q = 2.0                   # Bell Q (moderate width)
-AIR_RANGE_DB = (-5.0, 5.0)    # CLI range
 
 # ── Clean mediums ─────────────────────────────────────────────────────
 
@@ -81,7 +80,6 @@ LIMITER_LOOKAHEAD_S = 0.1     # 100 ms (port minimum, native unit=s)
 LIMITER_ATTACK_S = 0.25       # 250 ms (port minimum)
 LIMITER_RELEASE_S = 0.25      # 250 ms (port minimum)
 LIMITER_OVERSAMPLING = 4      # 4x oversampling
-CEILING_DEFAULT_DBFS = -1.1
 
 # ── De-harsher ────────────────────────────────────────────────────────
 
@@ -109,19 +107,11 @@ INTENSITY_GLUE_SLOPE = 0.7
 
 LUFS_GAIN_MIN_DB = -6.0
 LUFS_GAIN_MAX_DB = 14.0
-LUFS_DEFAULT_TARGET = -14.0
-LUFS_TOLERANCE_DB = 0.5       # "target reached" threshold
 
 # ── Post-LUFS re-limiter ──────────────────────────────────────────────
 
 POST_LIMITER_ATTACK_MS = 0.1
 POST_LIMITER_RELEASE_MS = 30.0
-
-# ── High-pass ─────────────────────────────────────────────────────────
-
-HP_FREQ_HZ = 35.0             # Main HP
-HP_SIDE_FREQ_HZ = 150.0       # Sidechain HP (remove low end from detector)
-HP_ORDER = 2
 
 # ── Clipping detection ────────────────────────────────────────────────
 
