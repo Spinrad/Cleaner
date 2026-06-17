@@ -107,7 +107,8 @@ def build_ms_sidechain_block(ducking_enabled: bool,
     return parts, tail_prefix
 
 
-def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
+def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
+                          derived=None) -> str:
     """Build the complete LSP filter_complex graph.
     
     Architecture:
@@ -116,11 +117,9 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
       → Width (native) → Limiter (LSP) → Postamble (native safety limiter)
     
     Args:
-        report: AnalysisReport with LSP params already computed.
+        report: AnalysisReport dict with derived params.
         stages: Stage enable/disable dict.
-    
-    Returns:
-        A complete filter_complex string.
+        derived: Optional DerivedParams for pre-computed values.
     """
     
     peak_db = report.get("peak_db", -3.0)
@@ -162,7 +161,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     
     # ── Stage 1: Expander (LSP, replaces agate) ──
     if on("expander"):
-        chain += "," + _clamped_lv2_node(EXPANDER_URI, compute_expander_lsp_params, report, tracker)
+        chain += "," + _clamped_lv2_node(EXPANDER_URI, compute_expander_lsp_params, report, tracker, derived)
         tracker.commit("expander", 0.0, "anti-AGC")
     
     # ── M/S encode ──
@@ -198,7 +197,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool]) -> str:
     
     # ── Stage: EQ notches + air (LSP) ──
     if on("notches") or on("air"):
-        tail += "," + _clamped_lv2_node(EQ_URI, compute_eq_lsp_params, report, tracker)
+        tail += "," + _clamped_lv2_node(EQ_URI, compute_eq_lsp_params, report, tracker, derived)
         # Derive actual RMS impact from computed notch gains
         notch_gain = 0.0
         if on("notches"):

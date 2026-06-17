@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # Backward compat alias — being phased out in favor of cleaner.types.AnalysisReport.
 from cleaner.types import AnalysisReport as _AnalysisReportDataclass
 AnalysisReport = _AnalysisReportDataclass  # type alias, not the dict anymore
+from cleaner.types import DerivedParams
 
 
 def compute_ffmpeg_params(report: AnalysisReport) -> AnalysisReport:
@@ -235,153 +236,173 @@ def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]
     }
 
 
-def compute_expander_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP expander_stereo (anti-AGC, Mode=Up).
-    
-    Replaces agate=mode=upward. Position: after HP35, before M/S encode.
-    Uses GainTracker for initial levels only (expander is first in chain).
-    """
-    crest = report.get("crest_factor_db", 12.0)
-    peak_db = report.get("peak_db", -3.0)
-    attack_ms = report.get("transient_attack_ms", 10.0)
-    agc_rec = report.get("agc_recovery_ms", 80.0)
-    intensity = report.get("_intensity", 0.5)
-    
-    # Mode: Up (anti-AGC expansion)
-    em = 1.0
-    
-    # Attack level (threshold): peak - 3 dB, converted to linear G
-    exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
-    al = db_to_linear_gain(exp_thresh_db)
-    
-    # Ratio: DECREASES with crest (more expansion when compressed)
-    base_ratio = max(EXP_RATIO_MIN, EXP_RATIO_BASE - crest * EXP_RATIO_SLOPE)
-    # Intensity scales the amount ABOVE 1.0: er = 1.0 + (base_ratio - 1.0) * intensity
-    er = 1.0 + (base_ratio - 1.0) * intensity
-    er = max(1.05, min(EXP_RATIO_MAX, er))  # clamp to real port range
-    
-    # Clipping penalty: reduce expansion on clipped audio
-    if report.get("is_heavily_clipped", False):
-        er = max(1.05, er * EXP_CLIP_RATIO_FACTOR)  # almost no expansion on clipped audio
-    
-    # Attack: fast to catch transients
-    at_val = max(1.0, min(attack_ms * EXP_ATTACK_FRAC, 10.0))
-    
-    # Release: AGC recovery based, clamped
-    rt_val = max(15.0, min(agc_rec * EXP_RELEASE_FRAC, 50.0))
-    
-    # Knee: moderate
-    kn = 0.5
-    
-    # Makeup: unity (don't add gain here)
-    mk = 1.0
-    
+def compute_expander_lsp_params(report: AnalysisReport, tracker=None,
+                                 derived: DerivedParams | None = None) -> dict[str, float]:
+    """LSP expander_stereo port mapping. Reads DerivedParams if available."""
+    if derived:
+        al = round(derived.expander_threshold_linear, 4)
+        er = round(derived.expander_ratio, 1)
+        at_val = round(derived.expander_attack_ms, 1)
+        rt_val = round(derived.expander_release_ms, 1)
+    else:
+        peak_db = report.get("peak_db", -3.0)
+        attack_ms = report.get("transient_attack_ms", 10.0)
+        agc_rec = report.get("agc_recovery_ms", 80.0)
+        intensity = report.get("_intensity", 0.5)
+        crest = report.get("crest_factor_db", 12.0)
+        exp_thresh_db = peak_db - EXP_THRESH_DELTA_DB
+        al = db_to_linear_gain(exp_thresh_db)
+        base_ratio = max(EXP_RATIO_MIN, EXP_RATIO_BASE - crest * EXP_RATIO_SLOPE)
+        er = 1.0 + (base_ratio - 1.0) * intensity
+        er = max(1.05, min(EXP_RATIO_MAX, er))
+        if report.get("is_heavily_clipped", False):
+            er = max(1.05, er * EXP_CLIP_RATIO_FACTOR)
+        at_val = max(1.0, min(attack_ms * EXP_ATTACK_FRAC, 10.0))
+        rt_val = max(15.0, min(agc_rec * EXP_RELEASE_FRAC, 50.0))
+        al = round(al, 4)
+        er = round(er, 1)
+        at_val = round(at_val, 1)
+        rt_val = round(rt_val, 1)
+
     return {
         "em": 1.0,  # Upward mode
-        "al": round(al, 4),
-        "er": round(er, 1),
-        "at": round(at_val, 1),
-        "rt": round(rt_val, 1),
-        "kn": round(kn, 3),
-        "mk": 1.0,
+        "al": al,
+        "er": er,
+        "at": at_val,
+        "rt": rt_val,
+        "kn": 0.5,   # moderate knee
+        "mk": 1.0,   # unity makeup
         "g_in": 1.0,
         "g_out": 1.0,
-        "scm": 1.0,   # RMS sidechain
-        "sla": 0.0,   # no lookahead
+        "scm": 1.0,  # RMS sidechain
+        "sla": 0.0,  # no lookahead
     }
 
 
-def compute_eq_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP para_equalizer_x16_stereo (notches + air + clean-mediums).
-
-    Uses up to 3 notch bands for room modes + 1 Bell for air at 10 kHz
-    + 1 Bell for low-mid cleanup at 600 Hz.
-    Band is disabled (gain=1.0 = 0 dB) if prominence < 3 dB.
-    Position: after de-harsher, before saturator.
-    """
-    modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
-    while len(modes_hz) < MAX_ROOM_MODES:
-        modes_hz.append(450)
-    modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
-    while len(modes_q) < MAX_ROOM_MODES:
-        modes_q.append(5)
-    prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
-    while len(prominences) < MAX_ROOM_MODES:
-        prominences.append(3)
-    
-    mult = report.get("_notch_multiplier", 1.0)
-    intensity = report.get("_intensity", 0.5)
-    air_db = report.get("_air", 0.0)
+def compute_eq_lsp_params(report: AnalysisReport, tracker=None,
+                          derived: DerivedParams | None = None) -> dict[str, float]:
+    """LSP para_equalizer_x16_stereo port mapping. Reads DerivedParams if available."""
     params: dict[str, float] = {
-        "mode": 0.0,   # stereo mode
-        "g_in": 1.0,
-        "g_out": 1.0,
+        "mode": 0.0, "g_in": 1.0, "g_out": 1.0,
     }
-    
-    # Notch bands (0, 1, 2)
-    for i in range(MAX_ROOM_MODES):
-        f0 = modes_hz[i]
-        q_val = min(max(modes_q[i], NOTCH_Q_MIN), NOTCH_Q_MAX)
-        prom = abs(prominences[i])
-        
-        if prom < NOTCH_PROM_DISABLE_DB:
-            # Disable band
-            params[f"s_{i}"] = 0.0
-            params[f"g_{i}"] = 1.0  # 0 dB = linear gain 1.0
-            params[f"f_{i}"] = round(f0, 1)
-            params[f"w_{i}"] = 4.0
-            params[f"q_{i}"] = 0.0
-            params[f"ft_{i}"] = 0.0  # off
-            params[f"fm_{i}"] = 0.0
-        else:
-            depth_db = min(prom * NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MAX_DB)
-            depth_db = max(depth_db, NOTCH_DEPTH_MIN_DB)
-            gain_db = -(depth_db * mult * intensity)
-            gain_db = max(gain_db, NOTCH_GAIN_FLOOR_DB)
-            
-            params[f"s_{i}"] = 0.0  # not soloed
-            params[f"ft_{i}"] = 1.0  # Bell (parametric cut)
-            params[f"fm_{i}"] = 0.0  # RLC (BT)
-            params[f"f_{i}"] = round(f0, 1)
-            params[f"w_{i}"] = round(q_val / 2.5, 1)  # Q to width mapping
-            params[f"q_{i}"] = round(q_val, 1)
-            params[f"g_{i}"] = round(db_to_linear_gain(gain_db), 4)
-    
-    # Air band (band 3): Bell at 10 kHz, Q=2.0
-    params["s_3"] = 0.0
-    if abs(air_db) > 0.01:
-        q_air = AIR_Q
-        params["ft_3"] = 1.0   # Bell
-        params["fm_3"] = 0.0
-        params["f_3"] = AIR_FREQ_HZ
-        params["w_3"] = round(q_air / 2.5, 1)
-        params["q_3"] = q_air
-        params["g_3"] = round(db_to_linear_gain(air_db), 4)
-    else:
-        params["ft_3"] = 0.0
-        params["fm_3"] = 0.0
-        params["f_3"] = AIR_FREQ_HZ
-        params["w_3"] = 4.0
-        params["q_3"] = 0.0
-        params["g_3"] = 1.0
 
-    # Clean-mediums band (band 4): Bell cut at 600 Hz, Q=1.5
-    clean_db = report.get("_clean_mediums", 0.0)
-    params["s_4"] = 0.0
-    if clean_db < -0.01:
-        params["ft_4"] = 1.0    # Bell
-        params["fm_4"] = 0.0
-        params["f_4"] = CLEAN_FREQ_HZ   # center of 450-750 Hz mud zone
-        params["w_4"] = 4.0     # Q≈1.5 → moderate width
-        params["q_4"] = CLEAN_Q
-        params["g_4"] = round(db_to_linear_gain(clean_db), 4)
+    if derived:
+        # Use pre-computed DerivedParams — single source of truth
+        for i in range(MAX_ROOM_MODES):
+            g_db = getattr(derived, f"notch_gain_{i+1}")
+            f0 = getattr(derived, f"notch_freq_{i+1}")
+            q_val = getattr(derived, f"notch_q_{i+1}")
+            params[f"s_{i}"] = 0.0
+            if g_db == 0.0:
+                params[f"ft_{i}"] = 0.0
+                params[f"fm_{i}"] = 0.0
+                params[f"f_{i}"] = round(f0, 1)
+                params[f"w_{i}"] = 4.0
+                params[f"q_{i}"] = 0.0
+                params[f"g_{i}"] = 1.0
+            else:
+                params[f"ft_{i}"] = 1.0
+                params[f"fm_{i}"] = 0.0
+                params[f"f_{i}"] = round(f0, 1)
+                params[f"w_{i}"] = round(q_val / 2.5, 1)
+                params[f"q_{i}"] = round(q_val, 1)
+                params[f"g_{i}"] = round(db_to_linear_gain(g_db), 4)
+
+        # Air
+        air_db_val = derived.air_db
+        params["s_3"] = 0.0
+        if abs(air_db_val) > 0.01:
+            params["ft_3"] = 1.0
+            params["fm_3"] = 0.0
+            params["f_3"] = AIR_FREQ_HZ
+            params["w_3"] = round(AIR_Q / 2.5, 1)
+            params["q_3"] = AIR_Q
+            params["g_3"] = round(db_to_linear_gain(air_db_val), 4)
+        else:
+            params["ft_3"] = 0.0; params["fm_3"] = 0.0
+            params["f_3"] = AIR_FREQ_HZ; params["w_3"] = 4.0
+            params["q_3"] = 0.0; params["g_3"] = 1.0
+
+        # Clean-mediums
+        clean_db = report.get("_clean_mediums", 0.0)
+        params["s_4"] = 0.0
+        if clean_db < -0.01:
+            params["ft_4"] = 1.0; params["fm_4"] = 0.0
+            params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0
+            params["q_4"] = CLEAN_Q
+            params["g_4"] = round(db_to_linear_gain(clean_db), 4)
+        else:
+            params["ft_4"] = 0.0; params["fm_4"] = 0.0
+            params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0
+            params["q_4"] = 0.0; params["g_4"] = 1.0
     else:
-        params["ft_4"] = 0.0
-        params["fm_4"] = 0.0
-        params["f_4"] = CLEAN_FREQ_HZ
-        params["w_4"] = 4.0
-        params["q_4"] = 0.0
-        params["g_4"] = 1.0
+        # Legacy path — compute from report dict
+        modes_hz = list(report.get("room_modes_hz", [300, 450, 600]))
+        while len(modes_hz) < MAX_ROOM_MODES:
+            modes_hz.append(450)
+        modes_q = list(report.get("room_mode_qs", [5, 5, 5]))
+        while len(modes_q) < MAX_ROOM_MODES:
+            modes_q.append(5)
+        prominences = list(report.get("room_mode_gains_db", [3, 3, 3]))
+        while len(prominences) < MAX_ROOM_MODES:
+            prominences.append(3)
+        mult = report.get("_notch_multiplier", 1.0)
+        intensity = report.get("_intensity", 0.5)
+        air_db = report.get("_air", 0.0)
+
+        # Notch bands (0, 1, 2)
+        for i in range(MAX_ROOM_MODES):
+            f0 = modes_hz[i]
+            q_val = min(max(modes_q[i], NOTCH_Q_MIN), NOTCH_Q_MAX)
+            prom = abs(prominences[i])
+
+            if prom < NOTCH_PROM_DISABLE_DB:
+                params[f"s_{i}"] = 0.0
+                params[f"g_{i}"] = 1.0
+                params[f"f_{i}"] = round(f0, 1)
+                params[f"w_{i}"] = 4.0
+                params[f"q_{i}"] = 0.0
+                params[f"ft_{i}"] = 0.0
+                params[f"fm_{i}"] = 0.0
+            else:
+                depth_db = min(prom * NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MAX_DB)
+                depth_db = max(depth_db, NOTCH_DEPTH_MIN_DB)
+                gain_db = -(depth_db * mult * intensity)
+                gain_db = max(gain_db, NOTCH_GAIN_FLOOR_DB)
+                params[f"s_{i}"] = 0.0
+                params[f"ft_{i}"] = 1.0
+                params[f"fm_{i}"] = 0.0
+                params[f"f_{i}"] = round(f0, 1)
+                params[f"w_{i}"] = round(q_val / 2.5, 1)
+                params[f"q_{i}"] = round(q_val, 1)
+                params[f"g_{i}"] = round(db_to_linear_gain(gain_db), 4)
+
+        # Air band
+        params["s_3"] = 0.0
+        if abs(air_db) > 0.01:
+            q_air = AIR_Q
+            params["ft_3"] = 1.0; params["fm_3"] = 0.0
+            params["f_3"] = AIR_FREQ_HZ
+            params["w_3"] = round(q_air / 2.5, 1)
+            params["q_3"] = q_air
+            params["g_3"] = round(db_to_linear_gain(air_db), 4)
+        else:
+            params["ft_3"] = 0.0; params["fm_3"] = 0.0
+            params["f_3"] = AIR_FREQ_HZ; params["w_3"] = 4.0
+            params["q_3"] = 0.0; params["g_3"] = 1.0
+
+        # Clean-mediums
+        clean_db = report.get("_clean_mediums", 0.0)
+        params["s_4"] = 0.0
+        if clean_db < -0.01:
+            params["ft_4"] = 1.0; params["fm_4"] = 0.0
+            params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0
+            params["q_4"] = CLEAN_Q
+            params["g_4"] = round(db_to_linear_gain(clean_db), 4)
+        else:
+            params["ft_4"] = 0.0; params["fm_4"] = 0.0
+            params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0
+            params["q_4"] = 0.0; params["g_4"] = 1.0
 
     # Bands 5-15: disabled
     for i in range(5, 16):
