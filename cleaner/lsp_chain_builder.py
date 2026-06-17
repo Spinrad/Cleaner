@@ -191,7 +191,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     
     # ── Stage: De-harsher (LSP, opt-in, before saturator) ──
     if on("deharsher"):
-        tail += "," + _clamped_lv2_node(DEHARSHER_URI, compute_deharsher_lsp_params, report, tracker)
+        tail += "," + _clamped_lv2_node(DEHARSHER_URI, compute_deharsher_lsp_params, report, tracker, derived)
         deharsh_reduction = -max(0.1, report.get("harshness_index", 0.0) * 1.5)
         tracker.commit("deharsher", deharsh_reduction, "band cut 2.5-4.5kHz")
     
@@ -210,7 +210,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     
     # ── Stage: Saturation (native asoftclip tanh) ──
     if on("saturation") and on("glue"):
-        sat_params = compute_native_saturation_params(report)
+        sat_params = compute_native_saturation_params(report, derived=derived)
         tail += (
             f",volume={sat_params['sat_drive_db']}dB,"
             f"asoftclip=type=tanh:threshold={sat_params['sat_threshold_linear']}:output=1.0:oversample=4,"
@@ -223,7 +223,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     
     # ── Stage: Bus Compressor (LSP) ──
     if on("bus_comp"):
-        tail += "," + _clamped_lv2_node(COMPRESSOR_URI, compute_compressor_lsp_params, report, tracker)
+        tail += "," + _clamped_lv2_node(COMPRESSOR_URI, compute_compressor_lsp_params, report, tracker, derived)
         bus = report.get("_bus_comp", 0.0)
         comp_gain = -bus * 2.0  # moderate compression gain reduction
         tracker.commit("compressor", comp_gain, "bus glue")
@@ -235,7 +235,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     
     # ── Stage: Limiter (LSP) ──
     if on("limiter"):
-        tail += "," + _clamped_lv2_node(LIMITER_URI, compute_limiter_lsp_params, report, tracker)
+        tail += "," + _clamped_lv2_node(LIMITER_URI, compute_limiter_lsp_params, report, tracker, derived)
         tracker.commit("limiter", 0.0, "peak ceiling")
     
     # ── Postamble: safety limiter (native) ──

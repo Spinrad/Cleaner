@@ -9,10 +9,8 @@ from __future__ import annotations
 import logging
 
 from cleaner.types import AnalysisReport, MasteringSettings, DerivedParams
-from cleaner.lv2_params import db_to_linear_gain
 from cleaner.constants import (
     SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, SAT_THRESHOLD_BASE, SAT_THRESHOLD_SLOPE,
-    SAT_CLIP_PENALTY,
     EXP_THRESH_DELTA_DB, EXP_RATIO_BASE, EXP_RATIO_SLOPE, EXP_RATIO_MIN, EXP_RATIO_MAX,
     EXP_ATTACK_FRAC, EXP_RELEASE_FRAC, EXP_CLIP_RATIO_FACTOR,
     NOTCH_PROM_DISABLE_DB, NOTCH_DEPTH_RATIO, NOTCH_DEPTH_MIN_DB, NOTCH_DEPTH_MAX_DB,
@@ -24,7 +22,6 @@ from cleaner.constants import (
     INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE,
     CLIP_PENALTY_COMP, CLIP_PENALTY_EXP_RATIO, CLIP_PENALTY_EXP_RANGE, CLIP_PENALTY_SAT,
     LIMITER_OVERSAMPLING, LIMITER_LOOKAHEAD_S, LIMITER_ATTACK_S, LIMITER_RELEASE_S,
-    CEILING_DEFAULT_DBFS,
 )
 
 logger = logging.getLogger(__name__)

@@ -3,10 +3,10 @@
 from __future__ import annotations
 import gc, logging
 from typing import Any
-from cleaner.analysis.spectrum import analyse_spectrum, FALLBACK as SF
+from cleaner.analysis.spectrum import analyse_spectrum
 from cleaner.analysis.clipping import detect_clipping
-from cleaner.analysis.dynamics import analyse_dynamics, FALLBACK as DF
-from cleaner.analysis.mid_side import analyse_mid_side, FALLBACK as MF
+from cleaner.analysis.dynamics import analyse_dynamics
+from cleaner.analysis.mid_side import analyse_mid_side
 
 from cleaner.lv2_params import db_to_linear_gain
 from cleaner.constants import (
@@ -24,8 +24,8 @@ from cleaner.constants import (
     LIMITER_LOOKAHEAD_S, LIMITER_ATTACK_S, LIMITER_RELEASE_S, LIMITER_OVERSAMPLING,
     INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE,
     DEHARSH_THRESH_MIN, DEHARSH_THRESH_MAX, DEHARSH_CREST_FACTOR,
+    DEHARSH_BAND_LOW_HZ, DEHARSH_BAND_HIGH_HZ,
     CLIP_PENALTY_COMP, CLIP_PENALTY_EXP_RATIO, CLIP_PENALTY_EXP_RANGE, CLIP_PENALTY_SAT,
-    CLIP_RATIO_THRESHOLD,
     MAX_ROOM_MODES,
 )
 
@@ -197,27 +197,23 @@ def get_global_analysis(source_path: str) -> AnalysisReport:
     return result
 
 
-def compute_native_saturation_params(report: AnalysisReport) -> dict[str, float]:
-    """Compute native ffmpeg asoftclip saturation params (drive + makeup).
-    
-    Uses asoftclip=type=tanh with proper drive so the signal ENTERS
-    the non-linear zone. Returns params for ffmpeg_chain format:
-    sat_drive_db, sat_makeup_db, sat_threshold_linear.
-    """
+def compute_native_saturation_params(report: AnalysisReport,
+                                       derived: DerivedParams | None = None) -> dict[str, float]:
+    """Native ffmpeg asoftclip saturation params. Reads DerivedParams if available."""
+    if derived:
+        return {
+            "sat_drive_db": derived.sat_drive_db,
+            "sat_makeup_db": derived.sat_makeup_db,
+            "sat_threshold_linear": derived.sat_threshold_linear,
+        }
     glue = report.get("_glue", 0.15)
     intensity = report.get("_intensity", 0.5)
     eff_glue = glue * (INTENSITY_GLUE_OFFSET + intensity * INTENSITY_GLUE_SLOPE)
-    
     drive_db = eff_glue * SAT_DRIVE_MULTIPLIER
-    
     threshold_linear = round(SAT_THRESHOLD_BASE - eff_glue * SAT_THRESHOLD_SLOPE, 3)
-    
-    # Clipping penalty: raise threshold (less saturation) on clipped audio
     if report.get("is_heavily_clipped", False):
         threshold_linear = min(threshold_linear + SAT_CLIP_PENALTY, 0.99)
-    
     makeup_db = round(-drive_db * SAT_MAKEUP_RATIO, 1)
-    
     return {
         "sat_drive_db": round(drive_db, 1),
         "sat_makeup_db": makeup_db,
@@ -406,104 +402,66 @@ def compute_eq_lsp_params(report: AnalysisReport, tracker=None,
     return params
 
 
-def compute_compressor_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP compressor_stereo (bus/glue).
-    
-    SSL-style glue compressor with parallel dry/wet mix.
-    Position: after saturator, before limiter.
-    Uses --bus-comp for threshold and mix (NOT --glue).
-    """
-    crest = report.get("crest_factor_db", 12.0)
-    if tracker is not None:
-        rms_db = tracker.current_rms_dbfs
+def compute_compressor_lsp_params(report: AnalysisReport, tracker=None,
+                                   derived: DerivedParams | None = None) -> dict[str, float]:
+    """LSP compressor_stereo port mapping. Uses tracker when available for RMS."""
+    if derived and tracker is None:
+        al = round(derived.bus_threshold_linear, 4)
+        cdr = max(0.0, 1.0 - derived.bus_mix)
+        cwt = derived.bus_mix
     else:
-        rms_db = report.get("rms_db", -15.0)
-    bus_comp = report.get("_bus_comp", 0.0)
-    
-    # Threshold: compress the body, not transients
-    bus_thresh_db = rms_db - crest * BUS_THRESH_CREST_FACTOR + (1.0 - bus_comp) * BUS_THRESH_OFFSET
-    al = db_to_linear_gain(bus_thresh_db)
-    
-    # Dry/wet for parallel compression
-    cdr = max(0.0, 1.0 - bus_comp)  # dry
-    cwt = bus_comp                     # wet
+        crest = report.get("crest_factor_db", 12.0)
+        if tracker is not None:
+            rms_db = tracker.current_rms_dbfs
+        else:
+            rms_db = report.get("rms_db", -15.0)
+        bus_comp = report.get("_bus_comp", 0.0)
+        bus_thresh_db = rms_db - crest * BUS_THRESH_CREST_FACTOR + (1.0 - bus_comp) * BUS_THRESH_OFFSET
+        al = round(db_to_linear_gain(bus_thresh_db), 4)
+        cdr = max(0.0, 1.0 - bus_comp)
+        cwt = bus_comp
     
     return {
-        "cm": 0.0,      # Downward compression
-        "al": round(al, 4),
-        "cr": BUS_RATIO,      # SSL classic 2:1
-        "at": BUS_ATTACK_MS,     # slow attack, lets transients through
-        "rt": BUS_RELEASE_MS,    # smooth release
-        "kn": 0.5,      # medium knee
-        "mk": 1.0,      # unity makeup
-        "cdr": round(cdr, 2),
-        "cwt": round(cwt, 2),
-        "g_in": 1.0,
-        "g_out": 1.0,
-        "scm": 1.0,     # RMS sidechain
-        "sla": 0.0,
+        "cm": 0.0, "al": al,
+        "cr": BUS_RATIO, "at": BUS_ATTACK_MS, "rt": BUS_RELEASE_MS,
+        "kn": 0.5, "mk": 1.0,
+        "cdr": round(cdr, 2), "cwt": round(cwt, 2),
+        "g_in": 1.0, "g_out": 1.0, "scm": 1.0, "sla": 0.0,
     }
 
 
-def compute_limiter_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP limiter_stereo (true-peak musical limiter).
-    
-    Replaces alimiter. Position: after compressor, before LUFS measurement.
-    """
-    ceiling = report.get("_ceiling_db", -1.1)
-    
-    # Threshold = ceiling (brickwall), NOT predicted peak
-    th_val = db_to_linear_gain(ceiling)
-    
+def compute_limiter_lsp_params(report: AnalysisReport, tracker=None,
+                                derived: DerivedParams | None = None) -> dict[str, float]:
+    """LSP limiter_stereo port mapping. Reads DerivedParams if available."""
+    if derived:
+        th_val = round(derived.limiter_ceiling_linear, 4)
+    else:
+        ceiling = report.get("_ceiling_db", -1.1)
+        th_val = db_to_linear_gain(ceiling)
     return {
-        "mode": 0.0,    # default mode
-        "th": round(th_val, 4),
-        "knee": 1.0,    # soft knee
-        "boost": 1.0,   # boost enabled
-        "lk": LIMITER_LOOKAHEAD_S,
-        "at": LIMITER_ATTACK_S,
-        "rt": LIMITER_RELEASE_S,
-        "ovs": LIMITER_OVERSAMPLING,
-        "alr": 1.0,     # adaptive release enabled
-        "g_in": 1.0,
-        "g_out": 1.0,
-        "scp": 1.0,     # sidechain preamp
+        "mode": 0.0, "th": th_val, "knee": 1.0, "boost": 1.0,
+        "lk": LIMITER_LOOKAHEAD_S, "at": LIMITER_ATTACK_S, "rt": LIMITER_RELEASE_S,
+        "ovs": LIMITER_OVERSAMPLING, "alr": 1.0,
+        "g_in": 1.0, "g_out": 1.0, "scp": 1.0,
     }
 
 
-def compute_deharsher_lsp_params(report: AnalysisReport, tracker=None) -> dict[str, float]:
-    """Compute parameters for LSP sc_compressor_stereo as de-harsher.
-    
-    Uses internal sidechain bandpass filter (shpf/slpf) to target
-    the harshness band (2.5-4.5 kHz). Opt-in via --deharsher.
-    Position: after M/S decode, before EQ.
-    """
-    harshness_index = report.get("harshness_index", 0.0)
-    tame_delta = report.get("_tame_cymbals", 0.0)
-    
-    # Convert harshness_index (decorr * log energy) to threshold
-    # Higher harshness -> lower threshold -> more reduction
-    base_threshold = max(0.01, 1.0 - harshness_index * 2.0)
-    threshold = max(0.005, base_threshold + tame_delta * 0.05)
-    
-    # Ratio: moderate, 1.5-3.0
-    ratio = max(1.5, min(3.0, 1.5 + harshness_index * 2.0 + abs(tame_delta) * 0.3))
-    
+def compute_deharsher_lsp_params(report: AnalysisReport, tracker=None,
+                                  derived: DerivedParams | None = None) -> dict[str, float]:
+    """LSP sc_compressor_stereo as de-harsher port mapping. Reads DerivedParams if available."""
+    if derived:
+        threshold = max(0.005, derived.deharsher_threshold_linear)
+        ratio = derived.deharsher_filter_ratio
+    else:
+        harshness_index = report.get("harshness_index", 0.0)
+        tame_delta = report.get("_tame_cymbals", 0.0)
+        base_threshold = max(0.01, 1.0 - harshness_index * 2.0)
+        threshold = max(0.005, base_threshold + tame_delta * 0.05)
+        ratio = max(1.5, min(3.0, 1.5 + harshness_index * 2.0 + abs(tame_delta) * 0.3))
     return {
-        "cm": 0.0,      # Downward (cut)
-        "al": round(threshold, 4),
-        "cr": round(ratio, 1),
-        "at": 5.0,      # moderate attack
-        "rt": 30.0,     # moderate release
-        "kn": 0.5,
-        "mk": 1.0,
-        "g_in": 1.0,
-        "g_out": 1.0,
-        "scm": 1.0,     # RMS sidechain
-        "sct": 1.0,     # Internal sidechain (use shpf/slpf)
-        "shpf": 2500.0, # HPF: bottom of harshness band
-        "slpf": 4500.0, # LPF: top of harshness band
-        "sla": 0.0,
-        "cdr": 0.0,
-        "cwt": 1.0,
+        "cm": 0.0, "al": round(threshold, 4), "cr": round(ratio, 1),
+        "at": 5.0, "rt": 30.0, "kn": 0.5, "mk": 1.0,
+        "g_in": 1.0, "g_out": 1.0, "scm": 1.0,
+        "sct": 1.0, "shpf": DEHARSH_BAND_LOW_HZ, "slpf": DEHARSH_BAND_HIGH_HZ,
+        "sla": 0.0, "cdr": 0.0, "cwt": 1.0,
     }
