@@ -15,6 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+from cleaner.constants import LUFS_GAIN_MIN_DB, LUFS_GAIN_MAX_DB
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ def apply_lufs_gain(
 
     # Passe 2: calculate and clamp gain
     gain_db = target_lufs - measured_lufs
-    gain_db = max(min(gain_db, 14.0), -6.0)
+    gain_db = max(min(gain_db, LUFS_GAIN_MAX_DB), LUFS_GAIN_MIN_DB)
 
     logger.info(
         "LUFS normalisation: measured=%.1f LUFS, target=%.1f LUFS, gain=%.2f dB",

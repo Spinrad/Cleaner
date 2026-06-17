@@ -5,9 +5,9 @@ import gc, logging
 import numpy as np, scipy.signal, soundfile as sf
 
 logger = logging.getLogger(__name__)
+from cleaner.constants import HF_CORR_LOW_HZ, HF_CORR_HIGH_HZ, HF_CORR_ORDER
 ANALYSIS_SR = 48000; MAX_DURATION_S = 60.0
 FALLBACK = {"ms_correlation_avg": 0.5, "side_energy_ratio": 0.3, "hf_correlation": 0.4, "harshness_index": 0.0}
-HF_LOW, HF_HIGH, HF_ORDER = 5000.0, 10000.0, 4
 
 def _resample(y, orig_sr, target_sr):
     if orig_sr == target_sr: return y
@@ -42,7 +42,7 @@ def _design_bp(low, high, sr, order):
 
 def analyse_cymbal_phase(left, right, sr=ANALYSIS_SR, overall_rms_lin=None):
     try:
-        sos = _design_bp(HF_LOW, HF_HIGH, sr, HF_ORDER)
+        sos = _design_bp(HF_CORR_LOW_HZ, HF_CORR_HIGH_HZ, sr, HF_CORR_ORDER)
         lf = scipy.signal.sosfiltfilt(sos, left)
         rf = scipy.signal.sosfiltfilt(sos, right)
     except Exception as exc:

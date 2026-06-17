@@ -20,6 +20,7 @@ from cleaner.lv2_introspect import get_plugin_info
 from cleaner.lv2_params import clamp_to_port
 from cleaner.lsp_uris import (EXPANDER_URI, EQ_URI,
                               DEHARSHER_URI, COMPRESSOR_URI, LIMITER_URI)
+from cleaner.constants import POST_LIMITER_ATTACK_MS, POST_LIMITER_RELEASE_MS
 
 
 def build_lv2_node(uri: str, params: dict[str, float]) -> str:
@@ -242,7 +243,7 @@ def build_lsp_filtergraph(report: dict, stages: dict[str, bool],
     ceiling = report.get('_ceiling_db', -1.1)
     post_ceiling = ceiling + 0.3 if on("limiter") else ceiling
     post_ceiling = min(post_ceiling, -0.3)  # never above -0.3 dBFS
-    tail += f",alimiter=limit={10.0**(post_ceiling/20.0):.4f}:attack=0.1:release=30:level=true"
+    tail += f",alimiter=limit={10.0**(post_ceiling/20.0):.4f}:attack={POST_LIMITER_ATTACK_MS}:release={POST_LIMITER_RELEASE_MS}:level=true"
     tail += "[out]"
     
     # ── Assemble ──

@@ -16,7 +16,7 @@ from cleaner.io_adapter import (convert_to_wav, measure_lufs, apply_lufs_gain,
                                 LUFSMeasurementError, require_ffmpeg)
 from cleaner.lv2_introspect import get_plugin_info
 from cleaner.lsp_uris import REQUIRED_URIS
-from cleaner.constants import SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE
+from cleaner.constants import SAT_DRIVE_MULTIPLIER, SAT_MAKEUP_RATIO, INTENSITY_GLUE_OFFSET, INTENSITY_GLUE_SLOPE, POST_LIMITER_ATTACK_MS, POST_LIMITER_RELEASE_MS
 from cleaner.types import MasteringSettings
 
 logger = logging.getLogger(__name__)
@@ -426,7 +426,7 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                 shutil.move(str(output), str(pre_limit))
                 limit_cmd = [
                     str(ffmpeg), "-y", "-i", str(pre_limit),
-                    "-af", f"alimiter=limit={10.0**(ceiling/20.0):.4f}:attack=0.1:release=30:level=true",
+                    "-af", f"alimiter=limit={10.0**(ceiling/20.0):.4f}:attack={POST_LIMITER_ATTACK_MS}:release={POST_LIMITER_RELEASE_MS}:level=true",
                     "-c:a", "pcm_s24le", str(output),
                 ]
                 proc = subprocess.run(limit_cmd, capture_output=True, timeout=timeout)
