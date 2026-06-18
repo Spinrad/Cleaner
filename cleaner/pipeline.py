@@ -98,8 +98,14 @@ def _print_analysis_report(analysis):
     modes = analysis.room_modes_hz
     qs = analysis.room_mode_qs
     gains = analysis.room_mode_gains_db
+    shown = 0
     for i in range(min(3, len(modes))):
-        _box_line(f"  Mode {i+1}: {modes[i]:.1f} Hz  Q={qs[i]:.0f}  {gains[i]:+.1f} dB")
+        if gains[i] <= 0.0:
+            continue  # skip modes with zero or negative prominence (no notch applied)
+        shown += 1
+        _box_line(f"  Mode {shown}: {modes[i]:.1f} Hz  Q={qs[i]:.0f}  {gains[i]:+.1f} dB")
+    if shown == 0:
+        _box_line("  (aucune resonance significative detectee)")
     _box_line("")
     _box_line("Stereo :", "yellow")
     _box_line(f"  Correlation M/S  : {analysis.ms_correlation_avg:.3f}  (1=mono, 0=large)")
@@ -367,7 +373,12 @@ def run_pipeline(source, output, *, keep_temp=False, dry_run=False, timeout=3600
                 click.echo(f"  [OK] LUFS final: {final_lufs:.1f} LUFS (cible {target_lufs})")
             else:
                 click.secho(f"  [!] LUFS final: {final_lufs:.1f} LUFS", fg="yellow")
-                click.secho(f"      Cible {target_lufs} non atteinte (gain plafonne a {gain_db:+.1f} dB)", fg="yellow")
+                if gain_db > 0 and final_lufs > target_lufs:
+                    click.secho(f"      Gain insuffisant: +{gain_db:.1f} dB applique, {final_lufs - target_lufs:+.1f} LUFS au-dessus de la cible", fg="yellow")
+                elif gain_db < 0 and final_lufs < target_lufs:
+                    click.secho(f"      Attenuation insuffisante: {gain_db:+.1f} dB applique, {final_lufs - target_lufs:+.1f} LUFS en dessous de la cible", fg="yellow")
+                else:
+                    click.secho(f"      Cible {target_lufs} non atteinte (gain {gain_db:+.1f} dB, LUFS final {final_lufs:.1f})", fg="yellow")
         else:
             click.echo("  [5/5] LUFS DESACTIVE -- copie directe")
             shutil.copy2(rendered_wav, output)

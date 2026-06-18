@@ -119,8 +119,8 @@ INTENSITY_GLUE_SLOPE = 0.7
 
 # ── LUFS ──────────────────────────────────────────────────────────────
 
-LUFS_GAIN_MIN_DB = -6.0
-LUFS_GAIN_MAX_DB = 14.0
+LUFS_GAIN_MIN_DB = -12.0
+LUFS_GAIN_MAX_DB = 12.0
 
 # ── Post-LUFS re-limiter ──────────────────────────────────────────────
 

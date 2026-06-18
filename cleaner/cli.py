@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # ── Mastering presets ────────────────────────────────────────────────
 
 PRESETS: dict = {
+    "natural": {
+        "glue": 0.2, "air": 1.5, "width": 0.05,
+        "bus_comp": 0.25, "target_lufs": -13.0,
+        "desc": "Default — voices forward, light cohesion. Live and studio.",
+    },
     "transparent": {
         "glue": 0.05, "air": 0.5, "width": 0.0,
         "bus_comp": 0.0, "target_lufs": -14.0,
@@ -85,7 +90,7 @@ def _parse_time(t: str) -> float:
 @click.option("--punchout", "-po", type=str, default=None,
               help="Trim end (mm:ss, e.g. 1:12).")
 @click.option("--preset", type=click.Choice(list(PRESETS.keys()), case_sensitive=False),
-              default=None, help="Mastering preset. Overrides color defaults.")
+              default="natural", help="Mastering preset. Overrides color defaults.")
 # Mastering color (floats -- preset-aware)
 @click.option("--glue", type=click.FloatRange(0.0, 1.0), default=0.15,
               help="Saturation drive (0.0=off, 0.5=medium, 1.0=max).")

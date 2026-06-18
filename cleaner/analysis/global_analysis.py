@@ -97,18 +97,18 @@ def compute_eq_lsp_params(derived: DerivedParams,
             params[f"ft_{i}"] = 1.0
             params[f"fm_{i}"] = 0.0
             params[f"f_{i}"] = round(f0, 1)
-            params[f"w_{i}"] = 4.0
+            params[f"w_{i}"] = 4.0   # unused in Bell mode, q controls width
             params[f"q_{i}"] = round(q_val, 1)
             params[f"g_{i}"] = round(db_to_linear_gain(g_db), 4)
 
-    # Air band (band 3): Bell at 10 kHz
+    # Air band (band 3): Hi-shelf
     air_db_val = derived.air_db
     params["s_3"] = 0.0
     if abs(air_db_val) > 0.01:
-        params["ft_3"] = 1.0; params["fm_3"] = 0.0
+        params["ft_3"] = 3.0; params["fm_3"] = 0.0  # Hi-shelf (confirmed LSP TTL: ft=3)
         params["f_3"] = AIR_FREQ_HZ
         params["w_3"] = 4.0
-        params["q_3"] = AIR_Q
+        params["q_3"] = 0.0  # shelf: q unused, width=4 neutral
         params["g_3"] = round(db_to_linear_gain(air_db_val), 4)
     else:
         params["ft_3"] = 0.0; params["fm_3"] = 0.0
@@ -120,7 +120,7 @@ def compute_eq_lsp_params(derived: DerivedParams,
     params["s_4"] = 0.0
     if clean_db < -0.01:
         params["ft_4"] = 1.0; params["fm_4"] = 0.0
-        params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0
+        params["f_4"] = CLEAN_FREQ_HZ; params["w_4"] = 4.0  # unused in Bell mode
         params["q_4"] = CLEAN_Q
         params["g_4"] = round(db_to_linear_gain(clean_db), 4)
     else:
